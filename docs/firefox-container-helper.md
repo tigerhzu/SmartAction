@@ -24,3 +24,8 @@ Firefox Container Helper 可以讓：
 A 客戶 → A Container
 B 客戶 → B Container
 C 客戶 → C Container
+
+SmartAction App
+→ Native Messaging Host
+→ Firefox Helper Extension
+→ Firefox Container
