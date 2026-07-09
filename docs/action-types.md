@@ -1,5 +1,6 @@
 # Action Types / 動作類型
-![Uploading image.png…]()
+<img width="963" height="808" alt="image" src="https://github.com/user-attachments/assets/5478b78d-7d1d-4165-b09d-5bc653495597" />
+
 
 SmartAction 透過 Action Type 決定每個輪盤按鈕要執行什麼動作。
 
