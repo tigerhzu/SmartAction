@@ -1,4 +1,5 @@
 # Action Types / 動作類型
+![Uploading image.png…]()
 
 SmartAction 透過 Action Type 決定每個輪盤按鈕要執行什麼動作。
 
