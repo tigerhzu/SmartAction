@@ -1,4 +1,5 @@
 # SmartAction
+<img width="497" height="414" alt="image" src="https://github.com/user-attachments/assets/69418fbc-33fb-4375-9cd6-cd426eba6b74" />
 
 SmartAction is a lightweight universal actions ring for IT maintenance, workspace launching, shortcuts, and automation.
 
