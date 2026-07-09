@@ -1,4 +1,5 @@
 # Client Workspace / 客戶工作區
+<img width="1300" height="790" alt="image" src="https://github.com/user-attachments/assets/22a3b9e2-aa64-4f21-9334-3636738c57be" />
 
 Client Workspace 是 SmartAction 的客戶維運工作區功能。
 
