@@ -1,4 +1,5 @@
 # Firefox Container Helper
+<img width="723" height="306" alt="image" src="https://github.com/user-attachments/assets/c56adbd3-ea32-4b11-885c-dd364556a08d" />
 
 Firefox Container Helper 是 SmartAction 的 Firefox 容器輔助功能。
 
