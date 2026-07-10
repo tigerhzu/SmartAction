@@ -9,6 +9,7 @@ _CONFIG_PATH = RESOURCES_DIR / "config.json"
 _DEFAULTS: dict = {
     "version": "0.1.0",
     "hotkey": "Alt+Space",
+    "ai_agent_enabled": False,
     "startup_video_enabled": True,
     "startup_video_duration": 5,
     "startup_video_path": "assets/startup/startup.mp4",

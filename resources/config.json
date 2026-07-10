@@ -1,6 +1,7 @@
 {
   "version": "0.1.0",
   "hotkey": "ctrl+alt+space",
+  "ai_agent_enabled": false,
   "ring": {
     "radius": 120,
     "item_size": 48,

@@ -35,11 +35,13 @@ class Application(QApplication):
         self._hotkey  = HotkeyManager(self._config)
         self._runner  = ActionRunner()
         self._ring    = RingWindow()
-        self._tray    = TrayIcon(self)
+        ai_agent_enabled = _as_bool(self._config.get("ai_agent_enabled", False))
+        self._tray    = TrayIcon(self, ai_agent_enabled=ai_agent_enabled)
         self._main_window: MainWindow | None = None
         self._settings_win = None
         self._ps_library_win = None
         self._client_workspace_win = None
+        self._ai_agent_win = None
         self._startup_splash = None
         raw_count = len(self._actions.get_raw_actions())
         debug_log(f"app version: {_APP_VERSION}")
@@ -72,6 +74,7 @@ class Application(QApplication):
 
         # Tray
         self._tray.settings_requested.connect(self._open_settings)
+        self._tray.ai_agent_requested.connect(self._open_ai_agent)
         self._tray.powershell_library_requested.connect(self._open_powershell_library)
         self._tray.client_workspace_requested.connect(self._open_client_workspace)
         self._tray.reload_requested.connect(self._reload_config)
@@ -178,6 +181,43 @@ class Application(QApplication):
         self._ps_library_win.show()
         self._ps_library_win.raise_()
         self._ps_library_win.activateWindow()
+
+    def _open_ai_agent(self) -> None:
+        if not _as_bool(self._config.get("ai_agent_enabled", False)):
+            return
+        if self._ai_agent_win is not None:
+            self._ai_agent_win.raise_()
+            self._ai_agent_win.activateWindow()
+            return
+
+        from core.ai_agent.catalog import ActionCatalog
+        from core.ai_agent.mock_provider import MockAIProvider
+        from core.ai_agent.service import AIAgentService
+        from core.client_workspace import ClientWorkspaceStore
+        from core.powershell_library import PowerShellLibrary
+        from ui.ai_agent_window import AIAgentWindow
+
+        try:
+            catalog = ActionCatalog.from_sources(
+                self._actions,
+                PowerShellLibrary(),
+                ClientWorkspaceStore(),
+            )
+        except Exception as exc:
+            debug_log(f"AI Agent catalog initialization failed: {type(exc).__name__}")
+            self._tray.showMessage(
+                "SmartAction AI Agent",
+                "Could not load the saved-action catalog. No plan was created or executed.",
+                QSystemTrayIcon.MessageIcon.Warning,
+                3000,
+            )
+            return
+        service = AIAgentService(MockAIProvider(), catalog)
+        self._ai_agent_win = AIAgentWindow(service)
+        self._ai_agent_win.finished.connect(lambda _result: setattr(self, "_ai_agent_win", None))
+        self._ai_agent_win.show()
+        self._ai_agent_win.raise_()
+        self._ai_agent_win.activateWindow()
 
     def _open_client_workspace(self) -> None:
         from ui.client_workspace_window import ClientWorkspaceWindow

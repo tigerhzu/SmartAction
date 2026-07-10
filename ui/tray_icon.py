@@ -94,14 +94,16 @@ def _make_icon() -> QIcon:
 
 class TrayIcon(QSystemTrayIcon):
     settings_requested       = Signal()
+    ai_agent_requested       = Signal()
     powershell_library_requested = Signal()
     client_workspace_requested = Signal()
     reload_requested         = Signal()
     restart_hotkey_requested = Signal()
 
-    def __init__(self, app: QApplication):
+    def __init__(self, app: QApplication, ai_agent_enabled: bool = False):
         super().__init__()
         self._app = app
+        self._ai_agent_enabled = ai_agent_enabled
         self.setIcon(_make_icon())
         self.setToolTip("Universal Actions Ring")
         self._build_menu()
@@ -112,6 +114,8 @@ class TrayIcon(QSystemTrayIcon):
         menu.setStyleSheet(_MENU_STYLE)
 
         menu.addAction("Open Settings",  self.settings_requested.emit)
+        if self._ai_agent_enabled:
+            menu.addAction("AI Agent (Preview)", self.ai_agent_requested.emit)
         menu.addAction("PowerShell Library", self.powershell_library_requested.emit)
         menu.addAction("Client Workspace", self.client_workspace_requested.emit)
         menu.addSeparator()
