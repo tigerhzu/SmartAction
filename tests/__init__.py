@@ -1,0 +1,1 @@
+"""SmartAction automated tests."""

@@ -36,6 +36,7 @@ app/
   application.py           # QApplication subclass and tray/ring/settings orchestration
 
 ui/
+  ai_agent_window.py       # Feature-flagged AI plan preview; no execution
   tray_icon.py             # System tray icon and tray menu
   ring_ui.py               # RingWindow radial launcher UI
   settings_window.py       # Settings dialog, action editor, theme/hotkey/profile UI
@@ -52,6 +53,7 @@ ui/
   main_window.py           # Currently not shown by formal entry flow
 
 core/
+  ai_agent/                # Provider/schema/catalog/validator planning boundary
   action_runner.py         # Dispatches selected MenuItem to action handler
   actions_config.py        # Active `config/actions.json` config model
   config_manager.py        # Legacy `resources/config.json` config model
@@ -200,6 +202,8 @@ Set-Location C:\Users\naugh\smartaction; python -m app.main
 | Settings window / action editor | `ui/settings_window.py` |
 | Startup video/splash | `ui/startup_splash.py`, controlled by `resources/config.json` |
 | Action execution dispatch | `core/action_runner.py` |
+| AI plan generation and validation (feature off by default) | `core/ai_agent/` |
+| AI plan preview and approval-only UI | `ui/ai_agent_window.py` |
 | Action handler registry | `core/actions/registry.py`, loaded through `core/actions/__init__.py` |
 | Individual action behavior | `core/actions/*.py` |
 | Active action config | `core/actions_config.py`, data in `config/actions.json` |
@@ -218,39 +222,29 @@ Set-Location C:\Users\naugh\smartaction; python -m app.main
 | Build/release helpers | `tools/*.py`, `build*.bat`, `smartaction.spec` |
 | Build outputs | `build/`, `dist/` |
 
+### AI Agent Phase-1 Boundary
+
+The optional AI Agent foundation is isolated under `core/ai_agent/` and is
+disabled by default through `resources/config.json`. It uses an offline Mock
+Provider and can reference only saved allowlisted Action, PowerShell Library,
+and Client Workspace IDs. `ui/ai_agent_window.py` previews a validated plan and
+can emit an approval signal, but no Phase-1 code connects that signal to
+`ActionRunner`, PowerShell, subprocess, or Client Workspace launch functions.
+
+See `docs/ai-agent-plan.md` for the security model, schema, rollout phases, and
+rollback procedure.
+
 ## 6. Current Workspace Change Status
 
-Git status:
+The repository is a Git working tree with `origin` pointing to
+`https://github.com/tigerhzu/SmartAction.git`. The v1.0 baseline inspected for
+the AI Agent work was clean `main` at commit `bbed860`, matching
+`origin/main`. AI foundation development is isolated on
+`feature/ai-agent-foundation`; no source changes are made directly on `main`.
 
-```text
-git status --short
-fatal: not a git repository (or any of the parent directories): .git
-
-git diff --stat
-warning: Not a git repository. Use --no-index to compare two paths outside a working tree
-```
-
-Conclusion:
-
-- `C:\Users\naugh\smartaction` currently has a `.gitignore`, but no `.git/` directory was found.
-- Because this is not a Git working tree, `git status` and `git diff` cannot identify modified/untracked files.
-- A reliable baseline diff is not available from Git in this workspace.
-
-Observable / known changes from the recent work session:
-
-| File | Status / note |
-| --- | --- |
-| `ui/main_window.py` | Known to have been rewritten into a dark neon landing-page-style launcher during the previous UI attempt. This is likely the wrong direction for the formal app flow because `app.main` does not open it. |
-| `resources/smartaction_neon_landing_check.png` | Generated preview/smoke-test screenshot for the unused `ui/main_window.py` landing page. Not part of formal runtime flow. |
-| `docs/project-structure-current.md` | This document. |
-
-Other files with recent timestamps may have been touched by running/building/testing, but without Git history they cannot be confidently classified as modified source changes.
-
-Risk notes:
-
-- Continuing UI redesign in `ui/main_window.py` will not affect the actual launched app unless the formal flow is changed to create/show `MainWindow`.
-- Editing `build/` or `dist/` directly is not recommended; those are generated artifacts.
-- The real visible app after startup is primarily tray/background, then ring/settings dialogs on demand.
+Generated `build/` and `dist/` output remains ignored and must not be edited as
+source. The real visible app after startup is primarily tray/background, then
+Ring and dialogs on demand.
 
 ## 7. Next-Step Recommendations For SmartAction UI Redesign
 
@@ -313,4 +307,3 @@ Files not to continue changing unless architecture changes:
 - `ui/main_window.py` for visual redesign work, because it is currently not used by `app.main`.
 - `build/` and `dist/`, because they are generated outputs.
 - `.codex/` and `.claude/`, unless changing agent/tooling configuration.
-
