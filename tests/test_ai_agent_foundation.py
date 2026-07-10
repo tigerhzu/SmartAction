@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -50,6 +51,41 @@ class ExecutionPlanModelTests(unittest.TestCase):
     def test_direct_constructor_rejects_untyped_risk(self) -> None:
         with self.assertRaises(PlanModelError):
             PlanStep("launch_workspace", "workspace", {}, "low")  # type: ignore[arg-type]
+
+    def test_rejects_invalid_structured_risk_level(self) -> None:
+        raw = {
+            "schema_version": "1.0",
+            "summary": "Invalid risk",
+            "steps": [
+                {
+                    "action_type": "launch_workspace",
+                    "action_id": "porsche-workspace",
+                    "parameters": {},
+                    "risk_level": "critical",
+                }
+            ],
+            "requires_confirmation": True,
+        }
+        with self.assertRaises(PlanModelError):
+            ExecutionPlan.from_dict(raw)
+
+    def test_rejects_missing_required_fields(self) -> None:
+        with self.assertRaises(PlanModelError):
+            ExecutionPlan.from_dict(
+                {
+                    "schema_version": "1.0",
+                    "steps": [],
+                    "requires_confirmation": True,
+                }
+            )
+        with self.assertRaises(PlanModelError):
+            PlanStep.from_dict(
+                {
+                    "action_type": "launch_workspace",
+                    "parameters": {},
+                    "risk_level": "low",
+                }
+            )
 
 
 class ActionWhitelistValidatorTests(unittest.TestCase):
@@ -112,6 +148,12 @@ class ActionWhitelistValidatorTests(unittest.TestCase):
         with self.assertRaises(PlanValidationError):
             self.validator.validate(
                 self._plan(PlanStep("launch_workspace", "invented", {}, RiskLevel.LOW))
+            )
+
+    def test_rejects_action_type_outside_allowlist(self) -> None:
+        with self.assertRaisesRegex(PlanValidationError, "not allowlisted"):
+            self.validator.validate(
+                self._plan(PlanStep("powershell", "raw-command", {}, RiskLevel.LOW))
             )
 
     def test_rejects_arbitrary_parameters(self) -> None:
@@ -195,6 +237,14 @@ class MockProviderTests(unittest.TestCase):
         self.assertEqual(proposal.plan.steps[0].action_id, "porsche-workspace")
         self.assertTrue(proposal.plan.requires_confirmation)
 
+    def test_mock_provider_requires_no_api_key(self) -> None:
+        catalog = ActionCatalog(
+            [CatalogEntry("launch_workspace", "workspace", "Workspace", RiskLevel.LOW)]
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            proposal = AIAgentService(MockAIProvider(), catalog).propose("Open workspace")
+        self.assertEqual(proposal.plan.steps[0].action_id, "workspace")
+
     def test_service_rejects_non_model_provider_output(self) -> None:
         class BadProvider(AIProvider):
             def generate_plan(self, user_request, available_actions):
@@ -220,7 +270,13 @@ class AIAgentWindowTests(unittest.TestCase):
         window._request.setPlainText("幫我開啟 Porsche 工作環境")
         window._generate_plan()
         self.assertTrue(window.confirm_enabled)
-        window.close()
+        approved = []
+        window.plan_confirmed.connect(lambda proposal: approved.append(proposal))
+        window._confirm_plan()
+        self.assertEqual(len(approved), 1)
+        self.assertFalse(window.confirm_enabled)
+        window.reject()
+        self.assertEqual(window.result(), window.DialogCode.Rejected)
 
     def test_high_risk_plan_cannot_be_approved(self) -> None:
         catalog = ActionCatalog(
