@@ -1,0 +1,51 @@
+{
+  "version": "0.1.0",
+  "hotkey": "ctrl+alt+space",
+  "ring": {
+    "radius": 120,
+    "item_size": 48,
+    "animation_ms": 180,
+    "theme": "dark"
+  },
+  "startup_video_enabled": true,
+  "startup_video_duration": 5,
+  "startup_video_path": "assets/startup/startup.mp4",
+  "menu_items": [
+    {
+      "id": "ai",
+      "label": "AI",
+      "children": [
+        {
+          "id": "claude",
+          "label": "Claude",
+          "action_type": "url",
+          "action_payload": "https://claude.ai"
+        },
+        {
+          "id": "chatgpt",
+          "label": "ChatGPT",
+          "action_type": "url",
+          "action_payload": "https://chatgpt.com"
+        }
+      ]
+    },
+    {
+      "id": "powershell",
+      "label": "PowerShell",
+      "children": [
+        {
+          "id": "ps_join_domain",
+          "label": "加入網域",
+          "action_type": "ps_form",
+          "action_payload": "join_domain"
+        },
+        {
+          "id": "ps_add_local_user",
+          "label": "加入 Local User",
+          "action_type": "ps_form",
+          "action_payload": "add_local_user"
+        }
+      ]
+    }
+  ]
+}

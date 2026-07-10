@@ -1,0 +1,9 @@
+{
+  "name": "smartaction_firefox_helper",
+  "description": "SmartAction Container Helper Native Messaging Host",
+  "path": "C:\\Users\\naugh\\smartaction\\native\\firefox_helper_host\\smartaction_firefox_host.cmd",
+  "type": "stdio",
+  "allowed_extensions": [
+    "smartaction-container-helper@naughtytiger06.local"
+  ]
+}

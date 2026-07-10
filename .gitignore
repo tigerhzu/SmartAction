@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.env
+
+# AI 工具與本機設定
+.claude/
+.codex/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 執行與打包產物
+build/
+dist/
+
+# 本機資料
+backups/
+*.log
+data/smartaction.lock
+
+# 敏感資料
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+credentials*.json
+secrets*.json

@@ -1,0 +1,9 @@
+{
+  "name": "smartaction_firefox_helper",
+  "description": "SmartAction Container Helper Native Messaging Host",
+  "path": "__HOST_COMMAND__",
+  "type": "stdio",
+  "allowed_extensions": [
+    "smartaction-container-helper@naughtytiger06.local"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "clients": [
+    {
+      "id": "demo-client",
+      "name": "Demo 客戶",
+      "containerName": "Demo-Container",
+      "firefoxProfile": "default-release",
+      "urls": [
+        {
+          "name": "Microsoft 365 Admin",
+          "url": "https://admin.microsoft.com"
+        },
+        {
+          "name": "Azure Portal",
+          "url": "https://portal.azure.com"
+        },
+        {
+          "name": "Youtube",
+          "url": "https://www.youtube.com/"
+        }
+      ]
+    }
+  ]
+}

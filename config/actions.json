@@ -1,0 +1,125 @@
+{
+  "version": "1.0",
+  "hotkey": "F24",
+  "theme": "tiger",
+  "actions": [
+    {
+      "id": "act_b6dac2d8",
+      "label": "How to use",
+      "short_label": "",
+      "icon": "🐯",
+      "type": "powershell",
+      "target": "https://github.com/tigerhzu/SmartAction",
+      "enabled": true,
+      "sub_actions": []
+    },
+    {
+      "id": "act_c7c1b22e",
+      "label": "看片專用",
+      "short_label": "",
+      "icon": "",
+      "type": "folder",
+      "target": "",
+      "enabled": true,
+      "sub_actions": [
+        {
+          "id": "act_988ecd6b",
+          "label": "Youtube",
+          "short_label": "",
+          "icon": "🌐",
+          "type": "url",
+          "target": "https://www.youtube.com/",
+          "enabled": true
+        },
+        {
+          "id": "act_69340877",
+          "label": "Bilibili",
+          "short_label": "",
+          "icon": "🌐",
+          "type": "url",
+          "target": "https://www.bilibili.com/",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "act_12e1674f",
+      "label": "客戶維運",
+      "short_label": "",
+      "icon": "🔄",
+      "type": "client_workspace",
+      "target": "",
+      "enabled": true,
+      "sub_actions": []
+    },
+    {
+      "id": "act_360db744",
+      "label": "Youtube",
+      "short_label": "",
+      "icon": "💡",
+      "type": "url",
+      "target": "https://www.youtube.com/",
+      "enabled": true,
+      "sub_actions": []
+    },
+    {
+      "id": "ai",
+      "label": "AI",
+      "short_label": "AI",
+      "icon": "🐯",
+      "type": "folder",
+      "target": "",
+      "enabled": true,
+      "sub_actions": [
+        {
+          "id": "chatgpt",
+          "label": "ChatGPT",
+          "short_label": "",
+          "icon": "💭",
+          "type": "url",
+          "target": "https://chatgpt.com",
+          "enabled": true
+        },
+        {
+          "id": "claude",
+          "label": "Claude",
+          "short_label": "",
+          "icon": "🤔",
+          "type": "url",
+          "target": "https://claude.ai",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "act_b228679f",
+      "label": "工作管理員",
+      "short_label": "",
+      "icon": "🔍",
+      "type": "app",
+      "target": "C:\\Windows\\System32\\Taskmgr.exe",
+      "enabled": true,
+      "sub_actions": []
+    },
+    {
+      "id": "act_86ee2fbe",
+      "label": "環境快速檢查",
+      "short_label": "",
+      "icon": "",
+      "type": "environment_check",
+      "target": "",
+      "enabled": true,
+      "sub_actions": []
+    },
+    {
+      "id": "act_cdf7e977",
+      "label": "PowerShell Library",
+      "short_label": "",
+      "icon": "",
+      "type": "powershell_library",
+      "target": "",
+      "enabled": true,
+      "sub_actions": []
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+[
+  {
+    "category": "AI",
+    "items": [
+      {"emoji": "🤖", "name": "Robot",         "keywords": ["ai", "bot", "assistant", "robot"]},
+      {"emoji": "🧠", "name": "Brain",         "keywords": ["ai", "thinking", "smart", "intelligence"]},
+      {"emoji": "✨", "name": "Sparkles",      "keywords": ["magic", "clean", "auto", "ai"]},
+      {"emoji": "💡", "name": "Bulb",          "keywords": ["idea", "thinking", "light", "tip"]},
+      {"emoji": "🔮", "name": "Crystal Ball",  "keywords": ["predict", "magic", "future", "ml"]},
+      {"emoji": "🎯", "name": "Target",        "keywords": ["goal", "precision", "aim", "focus"]},
+      {"emoji": "🚀", "name": "Rocket",        "keywords": ["launch", "fast", "boost", "deploy"]},
+      {"emoji": "🔬", "name": "Microscope",    "keywords": ["research", "analyze", "science", "lab"]},
+      {"emoji": "📊", "name": "Bar Chart",     "keywords": ["analytics", "data", "stats", "chart"]},
+      {"emoji": "🤔", "name": "Thinking",      "keywords": ["think", "ponder", "idea", "wonder"]},
+      {"emoji": "💭", "name": "Thought Bubble","keywords": ["think", "idea", "comment", "speech"]},
+      {"emoji": "🧬", "name": "DNA",           "keywords": ["science", "biology", "genetic", "ml"]},
+      {"emoji": "🔄", "name": "Cycle",         "keywords": ["cycle", "refresh", "loop", "repeat"]},
+      {"emoji": "⚡", "name": "Lightning",     "keywords": ["fast", "power", "energy", "speed"]},
+      {"emoji": "🌟", "name": "Star",          "keywords": ["highlight", "special", "best", "glow"]},
+      {"emoji": "🎓", "name": "Graduate",      "keywords": ["learn", "education", "train", "model"]}
+    ]
+  },
+  {
+    "category": "Apps",
+    "items": [
+      {"emoji": "💬", "name": "Chat",          "keywords": ["chat", "message", "talk", "slack"]},
+      {"emoji": "🌐", "name": "Globe",         "keywords": ["web", "browser", "internet", "url"]},
+      {"emoji": "📁", "name": "Folder",        "keywords": ["folder", "file", "directory", "organize"]},
+      {"emoji": "⚙️", "name": "Gear",          "keywords": ["settings", "config", "options", "system"]},
+      {"emoji": "🔍", "name": "Search",        "keywords": ["search", "find", "look", "discover"]},
+      {"emoji": "📧", "name": "Email",         "keywords": ["email", "mail", "message", "outlook"]},
+      {"emoji": "📅", "name": "Calendar",      "keywords": ["calendar", "date", "schedule", "meeting"]},
+      {"emoji": "🖥️", "name": "Desktop",       "keywords": ["desktop", "computer", "screen", "monitor"]},
+      {"emoji": "📱", "name": "Phone",         "keywords": ["mobile", "phone", "app", "device"]},
+      {"emoji": "🎮", "name": "Joystick",      "keywords": ["game", "play", "gaming", "controller"]},
+      {"emoji": "🎵", "name": "Music Note",    "keywords": ["music", "audio", "sound", "song"]},
+      {"emoji": "🎥", "name": "Camera",        "keywords": ["video", "camera", "record", "film"]},
+      {"emoji": "🖼️", "name": "Picture",       "keywords": ["image", "picture", "photo", "art"]},
+      {"emoji": "🗂️", "name": "Index Tabs",    "keywords": ["organize", "tabs", "index", "sort"]},
+      {"emoji": "🔗", "name": "Link",          "keywords": ["link", "url", "connect", "hyperlink"]},
+      {"emoji": "📊", "name": "Chart",         "keywords": ["chart", "data", "analytics", "excel"]}
+    ]
+  },
+  {
+    "category": "Dev",
+    "items": [
+      {"emoji": "💻", "name": "Laptop",        "keywords": ["code", "computer", "dev", "programming"]},
+      {"emoji": "🐛", "name": "Bug",           "keywords": ["bug", "debug", "error", "fix"]},
+      {"emoji": "🔧", "name": "Wrench",        "keywords": ["fix", "repair", "tool", "config"]},
+      {"emoji": "🛠️", "name": "Tools",         "keywords": ["build", "tool", "construct", "dev"]},
+      {"emoji": "📝", "name": "Memo",          "keywords": ["note", "code", "write", "log"]},
+      {"emoji": "🗃️", "name": "Card Index",    "keywords": ["database", "store", "data", "db"]},
+      {"emoji": "🧪", "name": "Test Tube",     "keywords": ["test", "experiment", "qa", "unit"]},
+      {"emoji": "🔑", "name": "Key",           "keywords": ["key", "auth", "access", "token", "secret"]},
+      {"emoji": "🔒", "name": "Lock",          "keywords": ["lock", "security", "protect", "secure"]},
+      {"emoji": "📦", "name": "Package",       "keywords": ["package", "deploy", "bundle", "npm", "pip"]},
+      {"emoji": "🌿", "name": "Herb",          "keywords": ["git", "branch", "version", "green"]},
+      {"emoji": "🔀", "name": "Shuffle",       "keywords": ["merge", "branch", "git", "shuffle"]},
+      {"emoji": "🖨️", "name": "Printer",       "keywords": ["print", "output", "log", "console"]},
+      {"emoji": "🗜️", "name": "Clamp",         "keywords": ["compress", "zip", "archive", "pack"]},
+      {"emoji": "📐", "name": "Ruler",         "keywords": ["design", "layout", "measure", "align"]},
+      {"emoji": "🧮", "name": "Abacus",        "keywords": ["compute", "calculate", "math", "algo"]}
+    ]
+  },
+  {
+    "category": "System",
+    "items": [
+      {"emoji": "🖥️", "name": "Monitor",       "keywords": ["computer", "system", "screen", "display"]},
+      {"emoji": "⚙️", "name": "Gear",          "keywords": ["settings", "config", "system", "options"]},
+      {"emoji": "🔧", "name": "Wrench",        "keywords": ["tool", "fix", "maintain", "repair"]},
+      {"emoji": "💾", "name": "Floppy",        "keywords": ["save", "disk", "storage", "backup"]},
+      {"emoji": "🖨️", "name": "Printer",       "keywords": ["print", "output", "document"]},
+      {"emoji": "⌨️", "name": "Keyboard",      "keywords": ["keyboard", "type", "input", "keys"]},
+      {"emoji": "🖱️", "name": "Mouse",         "keywords": ["mouse", "cursor", "click", "pointer"]},
+      {"emoji": "🔌", "name": "Plug",          "keywords": ["power", "connect", "plugin", "usb"]},
+      {"emoji": "📡", "name": "Antenna",       "keywords": ["signal", "wifi", "network", "satellite"]},
+      {"emoji": "🔋", "name": "Battery",       "keywords": ["battery", "power", "energy", "charge"]},
+      {"emoji": "🔐", "name": "Locked Key",    "keywords": ["security", "lock", "protect", "auth"]},
+      {"emoji": "🛡️", "name": "Shield",        "keywords": ["security", "protect", "firewall", "defend"]},
+      {"emoji": "🚨", "name": "Siren",         "keywords": ["alert", "warning", "emergency", "alarm"]},
+      {"emoji": "🗑️", "name": "Trash",         "keywords": ["delete", "remove", "trash", "bin"]},
+      {"emoji": "🔁", "name": "Repeat",        "keywords": ["restart", "loop", "refresh", "cycle"]},
+      {"emoji": "📟", "name": "Pager",         "keywords": ["device", "signal", "system", "beeper"]}
+    ]
+  },
+  {
+    "category": "Files",
+    "items": [
+      {"emoji": "📁", "name": "Folder",        "keywords": ["folder", "directory", "files", "organize"]},
+      {"emoji": "📂", "name": "Open Folder",   "keywords": ["open", "folder", "directory", "browse"]},
+      {"emoji": "🗂️", "name": "Dividers",      "keywords": ["organize", "tabs", "index", "sort"]},
+      {"emoji": "📄", "name": "Document",      "keywords": ["file", "document", "text", "page"]},
+      {"emoji": "📃", "name": "Page",          "keywords": ["page", "text", "document", "sheet"]},
+      {"emoji": "📋", "name": "Clipboard",     "keywords": ["clipboard", "list", "copy", "task"]},
+      {"emoji": "📝", "name": "Memo",          "keywords": ["note", "text", "write", "edit"]},
+      {"emoji": "📊", "name": "Spreadsheet",   "keywords": ["spreadsheet", "data", "excel", "table"]},
+      {"emoji": "📈", "name": "Chart Up",      "keywords": ["graph", "stats", "growth", "trend"]},
+      {"emoji": "📉", "name": "Chart Down",    "keywords": ["graph", "stats", "decline", "drop"]},
+      {"emoji": "🗒️", "name": "Spiral Pad",    "keywords": ["notes", "notebook", "journal", "pad"]},
+      {"emoji": "🗓️", "name": "Calendar",      "keywords": ["calendar", "schedule", "date", "plan"]},
+      {"emoji": "📌", "name": "Pushpin",       "keywords": ["pin", "mark", "bookmark", "important"]},
+      {"emoji": "📎", "name": "Paperclip",     "keywords": ["attach", "clip", "file", "link"]},
+      {"emoji": "🗄️", "name": "Filing Cabinet","keywords": ["archive", "storage", "cabinet", "files"]},
+      {"emoji": "💾", "name": "Save",          "keywords": ["save", "disk", "backup", "storage"]}
+    ]
+  },
+  {
+    "category": "Network",
+    "items": [
+      {"emoji": "🌐", "name": "Globe",         "keywords": ["internet", "web", "global", "browser"]},
+      {"emoji": "🔗", "name": "Link",          "keywords": ["url", "link", "connect", "hyperlink"]},
+      {"emoji": "📡", "name": "Satellite",     "keywords": ["wifi", "signal", "network", "antenna"]},
+      {"emoji": "🌍", "name": "Earth Africa",  "keywords": ["world", "global", "geography", "earth"]},
+      {"emoji": "🌎", "name": "Earth Americas","keywords": ["world", "global", "geography"]},
+      {"emoji": "🌏", "name": "Earth Asia",    "keywords": ["world", "global", "geography", "asia"]},
+      {"emoji": "📶", "name": "Signal Bars",   "keywords": ["signal", "mobile", "network", "bars"]},
+      {"emoji": "🔒", "name": "Lock",          "keywords": ["secure", "https", "ssl", "lock"]},
+      {"emoji": "🔓", "name": "Unlock",        "keywords": ["open", "public", "unsecured", "unlock"]},
+      {"emoji": "🌉", "name": "Bridge",        "keywords": ["connection", "bridge", "tunnel", "vpn"]},
+      {"emoji": "🕸️", "name": "Spider Web",    "keywords": ["network", "web", "mesh", "spider"]},
+      {"emoji": "📨", "name": "Incoming Mail", "keywords": ["receive", "mail", "incoming", "email"]},
+      {"emoji": "📩", "name": "Download",      "keywords": ["download", "receive", "inbox", "get"]},
+      {"emoji": "⚡", "name": "Lightning",     "keywords": ["fast", "cdn", "speed", "power"]},
+      {"emoji": "🔄", "name": "Cycle",         "keywords": ["sync", "refresh", "cycle", "update"]},
+      {"emoji": "🛜", "name": "Wireless",      "keywords": ["wifi", "wireless", "signal", "network"]}
+    ]
+  },
+  {
+    "category": "Media",
+    "items": [
+      {"emoji": "🎵", "name": "Music Note",    "keywords": ["music", "audio", "sound", "note"]},
+      {"emoji": "🎶", "name": "Music Notes",   "keywords": ["music", "audio", "song", "melody"]},
+      {"emoji": "🎥", "name": "Movie Camera",  "keywords": ["video", "camera", "film", "record"]},
+      {"emoji": "🎬", "name": "Clapboard",     "keywords": ["video", "film", "movie", "action"]},
+      {"emoji": "📷", "name": "Camera",        "keywords": ["photo", "picture", "image", "shoot"]},
+      {"emoji": "🖼️", "name": "Frame",         "keywords": ["image", "picture", "art", "gallery"]},
+      {"emoji": "🎨", "name": "Palette",       "keywords": ["design", "art", "color", "paint"]},
+      {"emoji": "🎭", "name": "Performing Arts","keywords": ["theater", "art", "show", "drama"]},
+      {"emoji": "📺", "name": "Television",    "keywords": ["tv", "screen", "broadcast", "watch"]},
+      {"emoji": "📻", "name": "Radio",         "keywords": ["radio", "audio", "broadcast", "listen"]},
+      {"emoji": "🎙️", "name": "Microphone",    "keywords": ["microphone", "record", "podcast", "mic"]},
+      {"emoji": "🎤", "name": "Stage Mic",     "keywords": ["sing", "perform", "karaoke", "voice"]},
+      {"emoji": "🎧", "name": "Headphones",    "keywords": ["listen", "audio", "headphones", "music"]},
+      {"emoji": "📸", "name": "Camera Flash",  "keywords": ["photo", "snapshot", "selfie", "flash"]},
+      {"emoji": "🎞️", "name": "Film Frames",   "keywords": ["film", "movie", "frames", "cinema"]},
+      {"emoji": "🎮", "name": "Joystick",      "keywords": ["game", "play", "gaming", "controller"]}
+    ]
+  },
+  {
+    "category": "Work",
+    "items": [
+      {"emoji": "💼", "name": "Briefcase",     "keywords": ["work", "business", "job", "office"]},
+      {"emoji": "📊", "name": "Bar Chart",     "keywords": ["analytics", "report", "data", "stats"]},
+      {"emoji": "📈", "name": "Chart Up",      "keywords": ["growth", "success", "progress", "kpi"]},
+      {"emoji": "📉", "name": "Chart Down",    "keywords": ["decline", "loss", "analysis", "drop"]},
+      {"emoji": "📋", "name": "Clipboard",     "keywords": ["task", "list", "plan", "checklist"]},
+      {"emoji": "✅", "name": "Check Mark",    "keywords": ["done", "complete", "ok", "yes", "tick"]},
+      {"emoji": "❌", "name": "Cross Mark",    "keywords": ["error", "fail", "cancel", "no", "wrong"]},
+      {"emoji": "📌", "name": "Pushpin",       "keywords": ["important", "pin", "note", "mark"]},
+      {"emoji": "🗓️", "name": "Calendar",      "keywords": ["schedule", "meeting", "date", "deadline"]},
+      {"emoji": "⏰", "name": "Alarm Clock",   "keywords": ["deadline", "time", "reminder", "alert"]},
+      {"emoji": "🏆", "name": "Trophy",        "keywords": ["success", "win", "achievement", "best"]},
+      {"emoji": "🎯", "name": "Target",        "keywords": ["goal", "focus", "objective", "aim"]},
+      {"emoji": "📝", "name": "Memo",          "keywords": ["notes", "task", "write", "document"]},
+      {"emoji": "💰", "name": "Money Bag",     "keywords": ["money", "cost", "budget", "finance"]},
+      {"emoji": "📑", "name": "Bookmark Tabs", "keywords": ["reference", "pages", "docs", "tabs"]},
+      {"emoji": "🔔", "name": "Bell",          "keywords": ["notification", "alert", "remind", "bell"]}
+    ]
+  },
+  {
+    "category": "Common",
+    "items": [
+      {"emoji": "❤️", "name": "Red Heart",     "keywords": ["love", "like", "heart", "favorite"]},
+      {"emoji": "⭐", "name": "Star",          "keywords": ["favorite", "important", "best", "star"]},
+      {"emoji": "✅", "name": "Check Mark",    "keywords": ["yes", "done", "complete", "ok", "tick"]},
+      {"emoji": "❌", "name": "Cross Mark",    "keywords": ["no", "error", "cancel", "wrong"]},
+      {"emoji": "⚠️", "name": "Warning",       "keywords": ["alert", "caution", "warning", "danger"]},
+      {"emoji": "ℹ️", "name": "Information",   "keywords": ["info", "help", "about", "details"]},
+      {"emoji": "🔔", "name": "Bell",          "keywords": ["notification", "alert", "bell", "remind"]},
+      {"emoji": "🔕", "name": "Bell Slash",    "keywords": ["mute", "silent", "off", "no-notify"]},
+      {"emoji": "➕", "name": "Plus",          "keywords": ["add", "plus", "create", "new"]},
+      {"emoji": "➖", "name": "Minus",         "keywords": ["remove", "minus", "subtract", "delete"]},
+      {"emoji": "✏️", "name": "Pencil",        "keywords": ["edit", "write", "modify", "pen"]},
+      {"emoji": "🗑️", "name": "Trash",         "keywords": ["delete", "remove", "clear", "bin"]},
+      {"emoji": "🔍", "name": "Magnifier",     "keywords": ["search", "find", "zoom", "look"]},
+      {"emoji": "🏠", "name": "House",         "keywords": ["home", "main", "start", "house"]},
+      {"emoji": "👍", "name": "Thumbs Up",     "keywords": ["ok", "approve", "good", "yes", "like"]},
+      {"emoji": "🔧", "name": "Wrench",        "keywords": ["tool", "fix", "maintain", "config"]}
+    ]
+  }
+]

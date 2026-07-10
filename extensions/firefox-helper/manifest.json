@@ -1,0 +1,25 @@
+{
+  "manifest_version": 2,
+  "name": "SmartAction Container Helper",
+  "version": "1.0.3",
+  "description": "Helper extension for SmartAction Client Workspace.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "smartaction-container-helper@naughtytiger06.local",
+      "strict_min_version": "91.0",
+      "data_collection_permissions": {
+        "required": ["none"],
+        "optional": []
+      }
+    }
+  },
+  "permissions": [
+    "tabs",
+    "cookies",
+    "contextualIdentities",
+    "nativeMessaging"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  }
+}

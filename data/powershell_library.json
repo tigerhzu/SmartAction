@@ -1,0 +1,384 @@
+{
+  "version": "1.1",
+  "scripts": [
+    {
+      "id": "ipconfig_all",
+      "name": "IP Configuration",
+      "description": "Show full network adapter configuration.",
+      "category": "Network",
+      "script_content": "ipconfig /all",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "ping_google_dns",
+      "name": "Ping Google DNS",
+      "description": "Test network connectivity by pinging 8.8.8.8.",
+      "category": "Network",
+      "script_content": "ping 8.8.8.8",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "whoami",
+      "name": "Current User",
+      "description": "Show the current Windows user identity.",
+      "category": "System",
+      "script_content": "whoami",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "hostname",
+      "name": "Hostname",
+      "description": "Show the computer hostname.",
+      "category": "System",
+      "script_content": "hostname",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "task_manager",
+      "name": "Open Task Manager",
+      "description": "Open Windows Task Manager.",
+      "category": "System",
+      "script_content": "Start-Process taskmgr",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "ping_target",
+      "name": "Ping Target",
+      "description": "Ping a host supplied at run time.",
+      "category": "Network",
+      "script_content": "ping {{Target}}",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": [
+        {
+          "name": "Target",
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "restart_computer",
+      "name": "Restart Computer",
+      "description": "Force restart this computer.",
+      "category": "System",
+      "script_content": "Restart-Computer -Force",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": []
+    },
+    {
+      "id": "shutdown_computer",
+      "name": "Shutdown Computer",
+      "description": "Force shut down this computer.",
+      "category": "System",
+      "script_content": "Stop-Computer -Force",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": []
+    },
+    {
+      "id": "open_services",
+      "name": "Open Services",
+      "description": "Open the Windows Services management console.",
+      "category": "System",
+      "script_content": "Start-Process services.msc",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "open_event_viewer",
+      "name": "Open Event Viewer",
+      "description": "Open Windows Event Viewer.",
+      "category": "System",
+      "script_content": "Start-Process eventvwr.msc",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "open_device_manager",
+      "name": "Open Device Manager",
+      "description": "Open Windows Device Manager.",
+      "category": "System",
+      "script_content": "Start-Process devmgmt.msc",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "create_local_user",
+      "name": "Create Local User",
+      "description": "Create a local Windows user with a password.",
+      "category": "User Management",
+      "script_content": "$Password = ConvertTo-SecureString \"{{Password}}\" -AsPlainText -Force\nNew-LocalUser -Name \"{{Username}}\" -Password $Password -FullName \"{{Username}}\" -Description \"Created by SmartAction\"",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": [
+        {
+          "name": "Username",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "Password",
+          "type": "password",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "add_local_user_to_administrators",
+      "name": "Add Local User to Administrators",
+      "description": "Add a local user to the local Administrators group.",
+      "category": "User Management",
+      "script_content": "Add-LocalGroupMember -Group \"Administrators\" -Member \"{{Username}}\"",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": [
+        {
+          "name": "Username",
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "disable_local_user",
+      "name": "Disable Local User",
+      "description": "Disable a local Windows user account.",
+      "category": "User Management",
+      "script_content": "Disable-LocalUser -Name \"{{Username}}\"",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": [
+        {
+          "name": "Username",
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "list_local_users",
+      "name": "List Local Users",
+      "description": "List local Windows users with enabled state and last logon.",
+      "category": "User Management",
+      "script_content": "Get-LocalUser | Select-Object Name, Enabled, LastLogon",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "list_local_administrators",
+      "name": "List Local Administrators",
+      "description": "List members of the local Administrators group.",
+      "category": "User Management",
+      "script_content": "Get-LocalGroupMember -Group \"Administrators\"",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "check_domain_status",
+      "name": "Check Domain Status",
+      "description": "Show whether this computer is joined to a domain.",
+      "category": "Domain / AD",
+      "script_content": "Get-CimInstance Win32_ComputerSystem | Select-Object Name, Domain, PartOfDomain",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "join_domain",
+      "name": "Join Domain",
+      "description": "Join this computer to an Active Directory domain.",
+      "category": "Domain / AD",
+      "script_content": "$SecurePassword = ConvertTo-SecureString \"{{DomainPassword}}\" -AsPlainText -Force\n$Credential = New-Object System.Management.Automation.PSCredential (\"{{DomainUser}}\", $SecurePassword)\nAdd-Computer -DomainName \"{{DomainName}}\" -Credential $Credential",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": [
+        {
+          "name": "DomainName",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "DomainUser",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "DomainPassword",
+          "type": "password",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "join_domain_and_restart",
+      "name": "Join Domain and Restart",
+      "description": "Join this computer to a domain and restart after success.",
+      "category": "Domain / AD",
+      "script_content": "$SecurePassword = ConvertTo-SecureString \"{{DomainPassword}}\" -AsPlainText -Force\n$Credential = New-Object System.Management.Automation.PSCredential (\"{{DomainUser}}\", $SecurePassword)\nAdd-Computer -DomainName \"{{DomainName}}\" -Credential $Credential -Restart",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": [
+        {
+          "name": "DomainName",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "DomainUser",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "DomainPassword",
+          "type": "password",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rename_computer",
+      "name": "Rename Computer",
+      "description": "Rename this computer without restarting automatically.",
+      "category": "Domain / AD",
+      "script_content": "Rename-Computer -NewName \"{{NewComputerName}}\"",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": [
+        {
+          "name": "NewComputerName",
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rename_computer_and_restart",
+      "name": "Rename Computer and Restart",
+      "description": "Rename this computer and restart after success.",
+      "category": "Domain / AD",
+      "script_content": "Rename-Computer -NewName \"{{NewComputerName}}\" -Restart",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": [
+        {
+          "name": "NewComputerName",
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "flush_dns",
+      "name": "Flush DNS",
+      "description": "Clear the Windows DNS resolver cache.",
+      "category": "Network",
+      "script_content": "ipconfig /flushdns",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "renew_ip",
+      "name": "Renew IP",
+      "description": "Release and renew DHCP leases.",
+      "category": "Network",
+      "script_content": "ipconfig /release\nipconfig /renew",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": []
+    },
+    {
+      "id": "show_dns_servers",
+      "name": "Show DNS Servers",
+      "description": "Show DNS servers configured on each network interface.",
+      "category": "Network",
+      "script_content": "Get-DnsClientServerAddress | Select-Object InterfaceAlias, ServerAddresses",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "ping_gateway",
+      "name": "Ping Gateway",
+      "description": "Find the default gateway and ping it.",
+      "category": "Network",
+      "script_content": "$gateway = Get-NetRoute -DestinationPrefix \"0.0.0.0/0\" | Sort-Object RouteMetric | Select-Object -First 1 -ExpandProperty NextHop\nping $gateway",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": []
+    },
+    {
+      "id": "test_dns_resolution",
+      "name": "Test DNS Resolution",
+      "description": "Resolve a domain name using Windows DNS tools.",
+      "category": "Network",
+      "script_content": "Resolve-DnsName \"{{Domain}}\"",
+      "need_admin": false,
+      "risk_level": "safe",
+      "parameters": [
+        {
+          "name": "Domain",
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "system_file_checker",
+      "name": "System File Checker",
+      "description": "Run sfc /scannow to check and repair system files.",
+      "category": "Repair Tools",
+      "script_content": "sfc /scannow",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": []
+    },
+    {
+      "id": "dism_restore_health",
+      "name": "DISM Restore Health",
+      "description": "Run DISM RestoreHealth against the online Windows image.",
+      "category": "Repair Tools",
+      "script_content": "DISM /Online /Cleanup-Image /RestoreHealth",
+      "need_admin": true,
+      "risk_level": "dangerous",
+      "parameters": []
+    },
+    {
+      "id": "restart_explorer",
+      "name": "Restart Explorer",
+      "description": "Restart Windows Explorer.",
+      "category": "Repair Tools",
+      "script_content": "Stop-Process -Name explorer -Force\nStart-Process explorer.exe",
+      "need_admin": false,
+      "risk_level": "dangerous",
+      "parameters": []
+    },
+    {
+      "id": "clear_temp_files",
+      "name": "Clear Temp Files",
+      "description": "Remove files from the current user's temporary folder.",
+      "category": "Repair Tools",
+      "script_content": "Remove-Item \"$env:TEMP\\*\" -Recurse -Force -ErrorAction SilentlyContinue",
+      "need_admin": false,
+      "risk_level": "dangerous",
+      "parameters": []
+    }
+  ]
+}
