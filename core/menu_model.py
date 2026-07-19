@@ -17,7 +17,7 @@ class MenuItem:
     label: str
     icon: str        = ""   # emoji shown inside the slot circle (overrides short_label)
     short_label: str = ""   # 1-3 char abbreviation shown inside the slot circle
-    action_type: str = ""   # "url"|"command"|"powershell"|"paste"|"form"|"ps_form"|"" = folder
+    action_type: str = ""   # registered action key; "" means folder
     action_payload: str     = ""
     children: list[MenuItem] = field(default_factory=list)
 
@@ -32,11 +32,16 @@ class MenuItem:
 
     def to_dict(self) -> dict:
         d: dict = {"id": self.id, "label": self.label}
-        if self.icon:           d["icon"]         = self.icon
-        if self.short_label:    d["short_label"]  = self.short_label
-        if self.action_type:    d["action_type"]  = self.action_type
-        if self.action_payload: d["action_payload"] = self.action_payload
-        if self.children:       d["children"]     = [c.to_dict() for c in self.children]
+        if self.icon:
+            d["icon"] = self.icon
+        if self.short_label:
+            d["short_label"] = self.short_label
+        if self.action_type:
+            d["action_type"] = self.action_type
+        if self.action_payload:
+            d["action_payload"] = self.action_payload
+        if self.children:
+            d["children"] = [c.to_dict() for c in self.children]
         return d
 
     @classmethod

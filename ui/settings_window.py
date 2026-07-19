@@ -27,6 +27,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -51,6 +52,12 @@ from PySide6.QtWidgets import (
 
 from core.actions_config import ActionsConfig
 from core import autostart as _autostart
+from core.constellation import (
+    CONSTELLATION_ORDER,
+    DEFAULT_CONSTELLATION,
+    DEFAULT_CONSTELLATION_COLOR,
+    constellation_label,
+)
 from core.debug_log import debug_log
 from core.help_links import (
     ABOUT_URL,
@@ -67,10 +74,10 @@ from core.profile_manager import (
     import_profile,
 )
 from ui.theme_painter import (
-    any_theme_frames,
     draw_energy_bubble,
     draw_theme_card_background,
-    preload_theme_assets,
+    prune_theme_asset_cache,
+    theme_frame_count,
 )
 from ui.window_utils import center_window, fit_window_to_screen, handle_fullscreen_shortcut
 from ui.style_tokens import (
@@ -101,10 +108,11 @@ from ui.style_tokens import (
 
 # ── Type definitions ──────────────────────────────────────────────────────────
 
-_TYPES_ORDERED = ["folder", "url", "app", "command", "powershell", "powershell_library", "environment_check", "client_workspace", "paste", "form", "ps_form"]
+_TYPES_ORDERED = ["folder", "settings", "url", "app", "command", "powershell", "powershell_library", "environment_check", "client_workspace", "paste", "form", "ps_form"]
 
 _TYPE_LABELS: dict[str, str] = {
     "folder":     "Folder",
+    "settings":   "Settings",
     "url":        "URL",
     "app":        "App / File",
     "command":    "Command",
@@ -121,6 +129,7 @@ _LABEL_TO_TYPE: dict[str, str] = {v: k for k, v in _TYPE_LABELS.items()}
 
 _COMBO_ALL  = [_TYPE_LABELS[t] for t in _TYPES_ORDERED]
 _COMBO_LEAF = [_TYPE_LABELS[t] for t in _TYPES_ORDERED if t != "folder"]
+_TARGETLESS_TYPES = {"settings", "powershell_library", "environment_check", "client_workspace"}
 
 # ── Shared stylesheets ────────────────────────────────────────────────────────
 
@@ -347,15 +356,15 @@ def _divider_v() -> QFrame:
 
 
 def _caption(text: str) -> QLabel:
-    l = QLabel(text)
-    l.setMinimumWidth(96)
-    l.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    label = QLabel(text)
+    label.setMinimumWidth(96)
+    label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
     font = QFont(HEADLINE_FONT_FAMILY)
     font.setPixelSize(13)
     font.setBold(True)
-    l.setFont(font)
-    l.setStyleSheet(f"color: {FOG};")
-    return l
+    label.setFont(font)
+    label.setStyleSheet(f"color: {FOG};")
+    return label
 
 
 _S_MESSAGE_BOX = f"""
@@ -453,6 +462,8 @@ def _current_script_id(combo: QComboBox) -> str:
 def _display_target(action: dict) -> str:
     if action.get("type") == "powershell_library":
         return "Open PowerShell Library"
+    if action.get("type") == "settings":
+        return "Open Settings"
     return action.get("target", "")
 
 
@@ -702,7 +713,6 @@ class _ThemeCard(QPushButton):
         self._tdata = theme_data
         self._sel   = False
         self._frame_index = 0
-        preload_theme_assets(theme_id)
         self.setFixedSize(self._W, self._H)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(theme_data["name"])
@@ -785,6 +795,7 @@ class _ThemeCard(QPushButton):
             rim_width=10.0,
             inner_fill=QColor(20, 22, 42, 218),
             frame_index=self._frame_index,
+            animate=self._sel,
         )
 
         if self._sel:
@@ -951,7 +962,7 @@ class _SubActionDialog(QDialog):
     def result_data(self) -> dict:
         type_label = self._combo_type.currentText()
         type_key = _LABEL_TO_TYPE.get(type_label, type_label)
-        needs_target = type_key not in ("powershell_library", "environment_check", "client_workspace")
+        needs_target = type_key not in _TARGETLESS_TYPES
         result = {
             "id":          self._data.get("id") or f"act_{uuid.uuid4().hex[:8]}",
             "label":       self._edit_label.text().strip(),
@@ -973,6 +984,10 @@ class _SubActionDialog(QDialog):
         self._sync_type_fields()
         if self._current_type() == "powershell_library" and not self._edit_label.text().strip():
             self._edit_label.setText("PowerShell Library")
+        if self._current_type() == "settings" and not self._edit_label.text().strip():
+            self._edit_label.setText("Settings")
+            if not self._edit_short.text().strip():
+                self._edit_short.setText("SET")
 
     def _on_script_changed(self, *_args) -> None:
         self._sync_type_fields()
@@ -990,7 +1005,7 @@ class _SubActionDialog(QDialog):
     def _sync_type_fields(self) -> None:
         type_key = self._current_type()
         is_library = False
-        needs_target = type_key not in ("powershell_library", "environment_check", "client_workspace")
+        needs_target = type_key not in _TARGETLESS_TYPES
         self._lbl_target.setVisible(needs_target)
         self._edit_target.setVisible(needs_target)
         self._lbl_script.setVisible(is_library)
@@ -1019,9 +1034,11 @@ class SettingsWindow(QDialog):
         self._reordering    = False
         self._pre_reorder_draft: list[dict] | None = None
         self._pending_theme = config.get_theme()
+        self._pending_constellation = config.get_constellation()
+        self._pending_constellation_color = config.get_constellation_color()
         self._theme_frame   = 0
         self._theme_timer   = QTimer(self)
-        self._theme_timer.setInterval(42)
+        self._theme_timer.setInterval(84)
         self._theme_timer.timeout.connect(self._advance_theme_frame)
         debug_log(
             f"SettingsWindow init: config_path={self._config.path.resolve()} "
@@ -1244,7 +1261,63 @@ class SettingsWindow(QDialog):
             row.addWidget(card)
 
         row.addStretch()
+
+        constellation_panel = QWidget()
+        constellation_panel.setFixedWidth(160)
+        constellation_layout = QVBoxLayout(constellation_panel)
+        constellation_layout.setContentsMargins(0, 5, 0, 5)
+        constellation_layout.setSpacing(7)
+
+        constellation_title = QLabel("Ring constellation:")
+        constellation_title.setStyleSheet(
+            f"font-size: 12px; font-weight: 600; color: {FOG};"
+        )
+        constellation_layout.addWidget(constellation_title)
+
+        self._constellation_combo = QComboBox()
+        self._constellation_combo.setStyleSheet(_S_COMBO)
+        for constellation_id in CONSTELLATION_ORDER:
+            self._constellation_combo.addItem(
+                constellation_label(constellation_id),
+                constellation_id,
+            )
+        constellation_index = self._constellation_combo.findData(
+            self._pending_constellation
+        )
+        if constellation_index < 0:
+            constellation_index = self._constellation_combo.findData(
+                DEFAULT_CONSTELLATION
+            )
+        self._constellation_combo.setCurrentIndex(max(0, constellation_index))
+        self._constellation_combo.currentIndexChanged.connect(
+            self._on_constellation_changed
+        )
+        constellation_layout.addWidget(self._constellation_combo)
+
+        color_row = QHBoxLayout()
+        color_row.setContentsMargins(0, 0, 0, 0)
+        color_row.setSpacing(7)
+        color_label = QLabel("Line:")
+        color_label.setStyleSheet(f"font-size: 11px; color: {FOG};")
+        color_row.addWidget(color_label)
+        self._constellation_color_btn = QPushButton()
+        self._constellation_color_btn.setFixedHeight(27)
+        self._constellation_color_btn.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+        self._constellation_color_btn.setToolTip(
+            "Choose the constellation star and line color"
+        )
+        self._constellation_color_btn.clicked.connect(
+            self._pick_constellation_color
+        )
+        color_row.addWidget(self._constellation_color_btn, stretch=1)
+        constellation_layout.addLayout(color_row)
+        constellation_layout.addStretch()
+        row.addWidget(constellation_panel)
+
         self._update_theme_btns()
+        self._update_constellation_color_button()
         return w
 
     def _make_profile_row(self) -> QWidget:
@@ -1419,6 +1492,8 @@ class SettingsWindow(QDialog):
                 actions_override=copy.deepcopy(self._draft),
                 hotkey_override=self._hotkey_edit.text().strip() or self._config.get_hotkey(),
                 theme_override=self._pending_theme,
+                constellation_override=self._pending_constellation,
+                constellation_color_override=self._pending_constellation_color,
             )
         except Exception as exc:
             QMessageBox.warning(self, "Export Profile", f"Profile export failed:\n{exc}")
@@ -1460,10 +1535,17 @@ class SettingsWindow(QDialog):
         self._config.reload()
         self._draft = copy.deepcopy(self._config.get_raw_actions())
         self._pending_theme = self._config.get_theme()
+        self._pending_constellation = self._config.get_constellation()
+        self._pending_constellation_color = self._config.get_constellation_color()
         self._hotkey_edit.setText(self._config.get_hotkey())
         self._sel_action = -1
         self._refresh_action_list()
         self._update_theme_btns()
+        constellation_index = self._constellation_combo.findData(
+            self._pending_constellation
+        )
+        self._constellation_combo.setCurrentIndex(max(0, constellation_index))
+        self._update_constellation_color_button()
         self._right_stack.setCurrentIndex(0)
 
         message = (
@@ -1482,23 +1564,71 @@ class SettingsWindow(QDialog):
         self._pending_theme = theme_id
         self._update_theme_btns()
 
+    def _on_constellation_changed(self, index: int) -> None:
+        constellation_id = self._constellation_combo.itemData(index)
+        self._pending_constellation = str(
+            constellation_id or DEFAULT_CONSTELLATION
+        )
+
+    def _pick_constellation_color(self) -> None:
+        selected = QColorDialog.getColor(
+            QColor(self._pending_constellation_color),
+            self,
+            "Constellation line color",
+        )
+        if not selected.isValid():
+            return
+        self._pending_constellation_color = selected.name(
+            QColor.NameFormat.HexRgb
+        ).upper()
+        self._update_constellation_color_button()
+
+    def _update_constellation_color_button(self) -> None:
+        button = getattr(self, "_constellation_color_btn", None)
+        if button is None:
+            return
+        color = QColor(
+            self._pending_constellation_color
+            or DEFAULT_CONSTELLATION_COLOR
+        )
+        text_color = "#101216" if color.lightness() >= 145 else "#F5F2EB"
+        color_name = color.name(QColor.NameFormat.HexRgb).upper()
+        button.setText(color_name)
+        button.setStyleSheet(f"""
+            QPushButton {{
+                background: {color_name};
+                color: {text_color};
+                border: 1px solid rgba(255, 255, 255, 0.34);
+                border-radius: 5px;
+                padding: 0 5px;
+                font-size: 10px;
+                font-weight: 700;
+            }}
+            QPushButton:hover {{
+                border: 2px solid {BONE};
+            }}
+        """)
+
     def _update_theme_btns(self) -> None:
         for tid, card in self._theme_btns.items():
             card.set_selected(tid == self._pending_theme)
 
     def _advance_theme_frame(self) -> None:
-        self._theme_frame = (self._theme_frame + 1) % 24
-        for card in getattr(self, "_theme_btns", {}).values():
+        frame_count = max(1, theme_frame_count(self._pending_theme))
+        self._theme_frame = (self._theme_frame + 1) % frame_count
+        card = getattr(self, "_theme_btns", {}).get(self._pending_theme)
+        if card is not None:
             card.set_frame_index(self._theme_frame)
 
     def _start_theme_timer(self) -> None:
-        theme_ids = tuple(getattr(self, "_theme_btns", {}).keys())
+        selected_theme = self._pending_theme
+        has_animation = theme_frame_count(selected_theme) > 1
         debug_log(
-            f"settings theme timer: theme_ids={theme_ids} "
-            f"has_animated_assets={any_theme_frames(theme_ids) if theme_ids else False} "
+            f"settings theme timer: selected_theme={selected_theme!r} "
+            f"has_animated_assets={has_animation} "
             f"visible={self.isVisible()}"
         )
-        if theme_ids and any_theme_frames(theme_ids) and self.isVisible():
+        if has_animation and self.isVisible():
             self._theme_timer.start()
 
     def _stop_theme_timer(self) -> None:
@@ -1511,6 +1641,7 @@ class SettingsWindow(QDialog):
     def hideEvent(self, event) -> None:
         self._save_window_size()
         self._stop_theme_timer()
+        prune_theme_asset_cache({self._pending_theme, self._config.get_theme()})
         super().hideEvent(event)
 
     def keyPressEvent(self, event) -> None:
@@ -1636,10 +1767,10 @@ class SettingsWindow(QDialog):
 
     def _make_editor(self) -> QWidget:
         w = QWidget()
-        w.setStyleSheet(f"""
-            QWidget {{
+        w.setStyleSheet("""
+            QWidget {
                 background: rgba(11, 13, 16, 0.72);
-            }}
+            }
         """)
         outer = QVBoxLayout(w)
         outer.setContentsMargins(32, 24, 32, 20)
@@ -1907,7 +2038,7 @@ class SettingsWindow(QDialog):
         if type_key == "powershell_library":
             action.pop("script_id", None)
             action["target"] = ""
-        elif type_key in ("environment_check", "client_workspace"):
+        elif type_key in _TARGETLESS_TYPES:
             action.pop("script_id", None)
             action["target"] = ""
         else:
@@ -2017,6 +2148,11 @@ class SettingsWindow(QDialog):
         if type_key == "powershell_library":
             if not self._edit_label.text().strip() or self._edit_label.text().strip() == "New Action":
                 self._edit_label.setText("PowerShell Library")
+        if type_key == "settings":
+            if not self._edit_label.text().strip() or self._edit_label.text().strip() == "New Action":
+                self._edit_label.setText("Settings")
+            if not self._edit_short.text().strip():
+                self._edit_short.setText("SET")
         self._on_field_changed()
 
     def _on_script_changed(self, *_args) -> None:
@@ -2038,7 +2174,7 @@ class SettingsWindow(QDialog):
     def _sync_action_type_fields(self, type_key: str) -> None:
         is_folder = type_key == "folder"
         is_library = False
-        needs_target = not is_folder and not is_library and type_key not in ("environment_check", "client_workspace")
+        needs_target = not is_folder and not is_library and type_key not in _TARGETLESS_TYPES
         self._lbl_target.setVisible(needs_target)
         self._edit_target.setVisible(needs_target)
         self._lbl_script.setVisible(is_library)
@@ -2145,6 +2281,10 @@ class SettingsWindow(QDialog):
 
         # Theme
         self._config.set_theme(self._pending_theme)
+        self._config.set_constellation(self._pending_constellation)
+        self._config.set_constellation_color(
+            self._pending_constellation_color
+        )
 
         # Actions
         self._config.save_raw_actions(self._draft)

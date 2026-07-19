@@ -8,6 +8,7 @@ from core.actions import (  # noqa: F401
     powershell_library_action,
     environment_check_action,
     client_workspace_action,
+    settings_action,
     app_action,
     paste_action,
     form_action,

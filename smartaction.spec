@@ -26,7 +26,6 @@ Path layout in the frozen exe directory
 """
 
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules
 
 ROOT = Path(SPECPATH)   # SPECPATH is injected by PyInstaller = dir of this .spec
 
@@ -101,21 +100,16 @@ _hidden = [
     'core.actions.powershell_library_action',
     'core.actions.environment_check_action',
     'core.actions.client_workspace_action',
+    'core.actions.settings_action',
     'core.actions.ps_form_action',
     'core.actions.paste_action',
     'core.actions.form_action',
     'core.actions.submenu_action',
 
-    # keyboard library (Windows global hotkeys)
+    # keyboard library (fallback hotkeys and synthetic paste input)
     'keyboard',
     'keyboard._winkeyboard',
 
-    # PySide6 extras that may not be auto-detected
-    'PySide6.QtSvg',
-    'PySide6.QtNetwork',
-    'PySide6.QtPrintSupport',
-    'PySide6.QtMultimedia',
-    'PySide6.QtMultimediaWidgets',
 ]
 
 # 鈹€鈹€ Analysis 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -136,12 +130,61 @@ a = Analysis(
         'numpy',
         'scipy',
         'PIL',
+        'PySide6.QtMultimedia',
+        'PySide6.QtMultimediaWidgets',
+        'PySide6.QtNetwork',
+        'PySide6.QtPdf',
+        'PySide6.QtPdfWidgets',
+        'PySide6.QtPrintSupport',
+        'PySide6.QtQml',
+        'PySide6.QtQuick',
+        'PySide6.QtSvg',
+        'PySide6.QtSvgWidgets',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
+
+# PySide's generic hooks collect optional plugins for capabilities SmartAction
+# never invokes. Keep the Windows QWidget platform and common raster formats,
+# but omit Multimedia, Network, QML/Quick, virtual keyboard, PDF/SVG and
+# headless/test backends.
+_unused_qt_binaries = {
+    'Qt6OpenGL.dll',
+    'Qt6Network.dll',
+    'Qt6Pdf.dll',
+    'Qt6Qml.dll',
+    'Qt6QmlMeta.dll',
+    'Qt6QmlModels.dll',
+    'Qt6QmlWorkerScript.dll',
+    'Qt6Quick.dll',
+    'Qt6Svg.dll',
+    'Qt6VirtualKeyboard.dll',
+    'QtNetwork.pyd',
+    'qcertonlybackend.dll',
+    'qdirect2d.dll',
+    'qicns.dll',
+    'qminimal.dll',
+    'qnetworklistmanager.dll',
+    'qoffscreen.dll',
+    'qopensslbackend.dll',
+    'qpdf.dll',
+    'qschannelbackend.dll',
+    'qsvg.dll',
+    'qsvgicon.dll',
+    'qtga.dll',
+    'qtiff.dll',
+    'qtuiotouchplugin.dll',
+    'qtvirtualkeyboardplugin.dll',
+    'qwbmp.dll',
+    'qwebp.dll',
+}
+a.binaries = [
+    entry for entry in a.binaries
+    if Path(entry[0]).name not in _unused_qt_binaries
+]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

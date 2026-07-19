@@ -10,13 +10,12 @@ from core.fonts import load_bundled_fonts
 from core.hotkey_manager import HotkeyManager
 from core.menu_model import MenuItem
 from core.paths import ASSETS_DIR, BUNDLE_DIR, CONFIG_DIR, DOCS_DIR
-from ui.main_window import MainWindow
 from ui.ring_ui import RingWindow
 from ui.theme_painter import theme_asset_debug_summary
 from ui.tray_icon import TrayIcon
 
 _ACTION_DELAY_MS = 120
-_APP_VERSION = "0.1.0"
+_APP_VERSION = "1.1.0"
 
 
 class Application(QApplication):
@@ -36,7 +35,6 @@ class Application(QApplication):
         self._runner  = ActionRunner()
         self._ring    = RingWindow()
         self._tray    = TrayIcon(self)
-        self._main_window: MainWindow | None = None
         self._settings_win = None
         self._ps_library_win = None
         self._client_workspace_win = None
@@ -83,18 +81,18 @@ class Application(QApplication):
         return self.exec()
 
     def _start_startup_sequence(self) -> None:
-        if self._show_startup_video():
+        if self._show_startup_splash():
             return
         QTimer.singleShot(0, self._enter_background_mode)
 
-    def _show_startup_video(self) -> bool:
-        if not _as_bool(self._config.get("startup_video_enabled", True)):
-            debug_log("startup video disabled by config")
+    def _show_startup_splash(self) -> bool:
+        if not _as_bool(self._config.get("startup_video_enabled", False)):
+            debug_log("startup splash disabled by config")
             return False
 
         from ui.startup_splash import StartupSplash, resolve_startup_media
 
-        path_value = str(self._config.get("startup_video_path", "assets/startup/startup.mp4") or "")
+        path_value = str(self._config.get("startup_video_path", "assets/startup/startup.png") or "")
         media_path = resolve_startup_media(path_value)
         debug_log(f"startup splash media path: {media_path} exists={bool(media_path and media_path.exists())}")
         if media_path is None:
@@ -124,23 +122,36 @@ class Application(QApplication):
         else:
             items = self._actions.load_actions()
             theme = self._actions.get_theme()
+            constellation = self._actions.get_constellation()
+            constellation_color = self._actions.get_constellation_color()
             raw_count = len(self._actions.get_raw_actions())
             debug_log(
                 f"opening ring via hotkey: loaded_actions_count={len(items)} "
                 f"raw_actions_count={raw_count} selected_theme_id={theme!r}"
             )
-            self._ring.show_at_cursor(items, theme)
+            self._ring.show_at_cursor(
+                items,
+                theme,
+                constellation,
+                constellation_color,
+            )
 
     def _on_item_activated(self, item: MenuItem) -> None:
         context = {
             "parent_widget": None,
+            "open_settings": self._open_settings,
             "open_powershell_library": self._open_powershell_library,
         }
         QTimer.singleShot(_ACTION_DELAY_MS, lambda: self._runner.run(item, context))
 
     def _open_settings(self) -> None:
-        from ui.settings_window import SettingsWindow
         if self._settings_win is not None:
+            debug_log(
+                "restoring existing settings window: "
+                f"visible={self._settings_win.isVisible()} "
+                f"minimized={self._settings_win.isMinimized()}"
+            )
+            self._settings_win.showNormal()
             self._settings_win.raise_()
             self._settings_win.activateWindow()
             return
@@ -151,7 +162,20 @@ class Application(QApplication):
             f"raw_actions_count={raw_count} enabled_actions_count={enabled_count} "
             f"selected_theme_id={self._actions.get_theme()!r}"
         )
-        self._settings_win = SettingsWindow(self._actions)
+        try:
+            from ui.settings_window import SettingsWindow
+
+            self._settings_win = SettingsWindow(self._actions)
+        except Exception as exc:
+            self._settings_win = None
+            debug_log(f"failed to open settings: {exc!r}")
+            self._tray.showMessage(
+                "Universal Actions Ring",
+                "Settings could not be opened. Check app_debug.log for details.",
+                QSystemTrayIcon.MessageIcon.Critical,
+                4000,
+            )
+            return
         self._settings_win.finished.connect(self._on_settings_closed)
         self._settings_win.show()
         self._settings_win.raise_()

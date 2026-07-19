@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 
-VERSION = "v1.0"
+VERSION = "v1.1.0"
 APP_NAME = "SmartAction"
 ADDON_ID = "smartaction-container-helper@naughtytiger06.local"
 HOST_NAME = "smartaction_firefox_helper"
@@ -53,9 +53,11 @@ FORBIDDEN_TEXT = [
 
 
 RELEASE_ACTIONS = {
-    "version": "1.0",
+    "version": "1.1",
     "hotkey": "ctrl+alt+space",
     "theme": "tiger",
+    "constellation": "scorpio",
+    "constellation_color": "#F2760B",
     "actions": [
         {
             "id": "getting_started",
@@ -85,6 +87,16 @@ RELEASE_ACTIONS = {
                     "enabled": True,
                 },
             ],
+        },
+        {
+            "id": "settings",
+            "label": "Settings",
+            "short_label": "SET",
+            "icon": "",
+            "type": "settings",
+            "target": "",
+            "enabled": True,
+            "sub_actions": [],
         },
         {
             "id": "environment_check",
@@ -130,7 +142,7 @@ RELEASE_ACTIONS = {
 }
 
 RELEASE_RESOURCES = {
-    "version": "0.1.0",
+    "version": "1.1.0",
     "hotkey": "ctrl+alt+space",
     "ring": {
         "radius": 120,
@@ -138,9 +150,9 @@ RELEASE_RESOURCES = {
         "animation_ms": 180,
         "theme": "dark",
     },
-    "startup_video_enabled": True,
+    "startup_video_enabled": False,
     "startup_video_duration": 5,
-    "startup_video_path": "assets/startup/startup.mp4",
+    "startup_video_path": "assets/startup/startup.png",
     "menu_items": [],
 }
 
@@ -459,7 +471,7 @@ exit /b 0
 
     _write_text(
         RELEASE_DIR / "uninstall.bat",
-        rf"""
+        r"""
 @echo off
 setlocal
 cd /d "%~dp0"
@@ -502,7 +514,7 @@ def _write_readme() -> None:
         f"""
 # SmartAction Release {VERSION}
 
-SmartAction is a Windows tray + hotkey productivity launcher for common IT and desktop workflows.
+SmartAction is a Windows tray + hotkey action ring for shortcuts, automation, IT support, and repeatable desktop workflows.
 
 ## What Is Included
 
@@ -537,6 +549,8 @@ start.bat
 or double-click `SmartAction.exe`.
 
 SmartAction runs in the system tray. Use the tray menu to open Settings, PowerShell Library, Client Workspace, reload config, restart hotkey, or exit.
+
+The Ring also includes a Settings action. Click an action to run it, or hold and drag an action to rotate the Ring without launching it.
 
 ## Configure Hotkey
 

@@ -12,6 +12,11 @@ from typing import Any
 from core.actions_config import ActionsConfig
 from core.client_workspace import ClientWorkspaceStore, WORKSPACE_PATH, validate_workspace_data
 from core.config_manager import ConfigManager
+from core.constellation import (
+    DEFAULT_CONSTELLATION,
+    DEFAULT_CONSTELLATION_COLOR,
+    normalise_constellation_color,
+)
 from core.paths import BACKUPS_DIR
 from core.powershell_library import LIBRARY_PATH, PowerShellLibrary, normalise_script
 from core.theme import DEFAULT_THEME
@@ -44,6 +49,8 @@ def build_profile(
     actions_override: list[dict] | None = None,
     hotkey_override: str | None = None,
     theme_override: str | None = None,
+    constellation_override: str | None = None,
+    constellation_color_override: str | None = None,
 ) -> dict[str, Any]:
     settings = _read_json(ConfigManager().path, {})
     library = PowerShellLibrary()
@@ -51,6 +58,16 @@ def build_profile(
     actions = deepcopy(actions_override if actions_override is not None else actions_config.get_raw_actions())
     hotkey = hotkey_override if hotkey_override is not None else actions_config.get_hotkey()
     theme = theme_override if theme_override is not None else actions_config.get_theme()
+    constellation = (
+        constellation_override
+        if constellation_override is not None
+        else actions_config.get_constellation()
+    )
+    constellation_color = normalise_constellation_color(
+        constellation_color_override
+        if constellation_color_override is not None
+        else actions_config.get_constellation_color()
+    )
 
     return {
         "profile_version": PROFILE_VERSION,
@@ -61,6 +78,8 @@ def build_profile(
             "version": "1.0",
             "hotkey": hotkey,
             "theme": theme,
+            "constellation": constellation,
+            "constellation_color": constellation_color,
         },
         "actions": _sanitize(actions),
         "powershell_library": _sanitize(library.scripts()),
@@ -68,9 +87,11 @@ def build_profile(
         "ui": _sanitize(
             {
                 "theme": theme,
-                "startup_video_enabled": settings.get("startup_video_enabled", True),
+                "constellation": constellation,
+                "constellation_color": constellation_color,
+                "startup_video_enabled": settings.get("startup_video_enabled", False),
                 "startup_video_duration": settings.get("startup_video_duration", 5),
-                "startup_video_path": settings.get("startup_video_path", "assets/startup/startup.mp4"),
+                "startup_video_path": settings.get("startup_video_path", "assets/startup/startup.png"),
             }
         ),
     }
@@ -82,8 +103,17 @@ def export_profile(
     actions_override: list[dict] | None = None,
     hotkey_override: str | None = None,
     theme_override: str | None = None,
+    constellation_override: str | None = None,
+    constellation_color_override: str | None = None,
 ) -> None:
-    profile = build_profile(actions_config, actions_override, hotkey_override, theme_override)
+    profile = build_profile(
+        actions_config,
+        actions_override,
+        hotkey_override,
+        theme_override,
+        constellation_override,
+        constellation_color_override,
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_json(path, profile)
 
@@ -128,6 +158,17 @@ def _import_replace(profile: dict[str, Any], actions_config: ActionsConfig) -> N
         "version": str(config_meta.get("version", "1.0")),
         "hotkey": str(config_meta.get("hotkey", "ctrl+space")),
         "theme": str(config_meta.get("theme") or profile.get("ui", {}).get("theme", DEFAULT_THEME)),
+        "constellation": str(
+            config_meta.get("constellation")
+            or profile.get("ui", {}).get("constellation", DEFAULT_CONSTELLATION)
+        ),
+        "constellation_color": normalise_constellation_color(
+            config_meta.get("constellation_color")
+            or profile.get("ui", {}).get(
+                "constellation_color",
+                DEFAULT_CONSTELLATION_COLOR,
+            )
+        ),
         "actions": actions,
     }
 

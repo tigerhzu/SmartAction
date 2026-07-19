@@ -4,7 +4,7 @@ Radial Action Ring overlay — themed floating-slot design.
 Visual features
 ---------------
 - Gradient-filled slot circles with inner rim highlight (glassmorphism feel)
-- Thin connecting lines between adjacent occupied slots
+- Independent floating action bubbles over a constellation star map
 - Enlarged emoji inside slots (24 px pixel size); short text labels at 13 px
 - Five swappable themes via core.theme
 - Floating white label cards outside each occupied slot
@@ -31,6 +31,7 @@ from PySide6.QtGui import (
     QColor,
     QCursor,
     QFont,
+    QFontMetricsF,
     QLinearGradient,
     QPainter,
     QPainterPath,
@@ -39,6 +40,12 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QWidget
 
+from core.constellation import (
+    CONSTELLATIONS,
+    DEFAULT_CONSTELLATION,
+    DEFAULT_CONSTELLATION_COLOR,
+    normalise_constellation_color,
+)
 from core.debug_log import debug_log
 from core.theme import DEFAULT_THEME, THEMES
 from ui.style_tokens import (
@@ -65,6 +72,7 @@ if TYPE_CHECKING:
 ITEM_RADIUS   = 28      # slot circle radius (px)
 ITEM_ORBIT    = 112     # distance from window centre → slot centre
 NUM_SLOTS     = 8
+MAX_DIRECT_SLOTS = 10  # keep modest overflow visible without crowding the ring
 CENTER_RADIUS = 18      # centre close / back button radius
 
 _LABEL_H      = 30      # label card height
@@ -73,6 +81,7 @@ _LABEL_PADX   = 12      # horizontal text padding inside card
 _LABEL_MAX_W  = 154     # max card width before truncation
 _LABEL_GAP    = 12      # gap between slot edge and near card edge
 _HIT_PADDING  = 12      # forgiving click target padding for labels / buttons
+_DRAG_THRESHOLD = 10.0  # avoids treating normal click jitter as ring rotation
 
 WINDOW_SIZE   = 460
 MIN_WINDOW_SIZE = 300
@@ -131,12 +140,19 @@ class RingWindow(QWidget):
         self._hovered_slot: int = -1
         self._center_hovered: bool = False
         self._theme_frame: int = 0
+        self._constellation_id = DEFAULT_CONSTELLATION
+        self._constellation_color = DEFAULT_CONSTELLATION_COLOR
         self._ring_container_rect = QRectF(0, 0, WINDOW_SIZE, WINDOW_SIZE)
         self._outside_click_enabled: bool = False
         self._is_dismissing: bool = False
         self._pressed_inside_ring: bool = False
         self._ignore_next_click: bool = False
         self._active_action: int | None = None
+        self._rotation_angle: float = 0.0
+        self._drag_slot: int = -1
+        self._drag_start_pos = QPointF()
+        self._drag_last_angle: float = 0.0
+        self._ring_drag_active: bool = False
 
         self._setup_window()
         self._build_fonts()
@@ -150,7 +166,8 @@ class RingWindow(QWidget):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Window
+            | Qt.WindowType.Popup
+            | Qt.WindowType.NoDropShadowWindowHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
@@ -175,7 +192,6 @@ class RingWindow(QWidget):
 
     def _apply_theme(self, theme_id: str) -> None:
         self._theme_id = theme_id
-        preload_theme_assets(theme_id)
         self._theme_frame = 0
         t = THEMES.get(theme_id, THEMES[DEFAULT_THEME])
 
@@ -192,11 +208,24 @@ class RingWindow(QWidget):
         self._c_center_x = c(*t["center_x"])
         self._c_center_b = c(*t["center_b"])
         self._c_rim      = c(*t["rim"])
-        self._c_line     = c(*t["line"])
         self._c_empty    = c(*t["empty"])
         self._c_card_bg  = c(*t["card_bg"])
         self._c_card_txt = c(*t["card_text"])
         self._c_card_sh  = c(*t["card_shadow"])
+
+    def _apply_constellation(
+        self,
+        constellation_id: str,
+        constellation_color: str = DEFAULT_CONSTELLATION_COLOR,
+    ) -> None:
+        self._constellation_id = (
+            constellation_id
+            if constellation_id in CONSTELLATIONS
+            else DEFAULT_CONSTELLATION
+        )
+        self._constellation_color = normalise_constellation_color(
+            constellation_color
+        )
 
     # ── Animations ────────────────────────────────────────────────────────────
 
@@ -221,7 +250,7 @@ class RingWindow(QWidget):
 
     def _build_theme_timer(self) -> None:
         self._theme_timer = QTimer(self)
-        self._theme_timer.setInterval(42)
+        self._theme_timer.setInterval(100)
         self._theme_timer.timeout.connect(self._advance_theme_frame)
 
     def _advance_theme_frame(self) -> None:
@@ -229,9 +258,11 @@ class RingWindow(QWidget):
         if count <= 1:
             self._theme_timer.stop()
             return
-        self._theme_frame = (self._theme_frame + 1) % count
+        # Ten repaints per second is smooth enough at the ring's small size.
+        # Step two source frames at a time to retain the original animation pace.
+        self._theme_frame = (self._theme_frame + 2) % count
         if self.isVisible():
-            self.update()
+            self._update_ring()
 
     def _start_theme_timer(self) -> None:
         count = theme_frame_count(getattr(self, "_theme_id", DEFAULT_THEME))
@@ -247,15 +278,23 @@ class RingWindow(QWidget):
 
     def _apply_scale(self, value: object) -> None:
         self._scale = float(value)  # type: ignore[arg-type]
-        self.update()
+        self._update_ring()
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def show_at_cursor(self, items: list[MenuItem], theme_id: str = DEFAULT_THEME) -> None:
+    def show_at_cursor(
+        self,
+        items: list[MenuItem],
+        theme_id: str = DEFAULT_THEME,
+        constellation_id: str = DEFAULT_CONSTELLATION,
+        constellation_color: str = DEFAULT_CONSTELLATION_COLOR,
+    ) -> None:
         debug_log("show_ring called")
         debug_log(f"ring show requested: items={len(items)} theme_id={theme_id!r}")
         self._reset_show_state()
+        preload_theme_assets(theme_id)
         self._apply_theme(theme_id)
+        self._apply_constellation(constellation_id, constellation_color)
         self._nav_stack = [items]
         self._reset_hover()
         self._position_at_cursor()
@@ -268,12 +307,12 @@ class RingWindow(QWidget):
         self._anim_scale.setStartValue(0.80)
         self._anim_scale.setEndValue(1.0)
 
-        self._log_overlay_state("show_ring before showFullScreen")
-        self.showFullScreen()
+        self._log_overlay_state("show_ring before show")
+        self.show()
         self.raise_()
         self.activateWindow()
         self.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
-        self._log_overlay_state("show_ring after showFullScreen")
+        self._log_overlay_state("show_ring after show")
         self._start_theme_timer()
         self._anim_open.start()
         debug_log("outside_click_enabled scheduled")
@@ -296,6 +335,7 @@ class RingWindow(QWidget):
         self._pressed_inside_ring = False
         self._ignore_next_click = False
         self._active_action = None
+        self._cancel_ring_drag()
         self._reset_hover()
         self._anim_open.stop()
         self._anim_nav.stop()
@@ -322,6 +362,8 @@ class RingWindow(QWidget):
         self._pressed_inside_ring = False
         self._ignore_next_click = False
         self._active_action = None
+        self._rotation_angle = 0.0
+        self._cancel_ring_drag()
         self._reset_hover()
         debug_log(
             "next show reset completed: "
@@ -371,7 +413,7 @@ class RingWindow(QWidget):
         self._anim_nav.setStartValue(0.88)
         self._anim_nav.setEndValue(1.0)
         self._anim_nav.start()
-        self.update()
+        self._update_ring()
 
     def _reset_hover(self) -> None:
         self._hovered_slot = -1
@@ -398,43 +440,76 @@ class RingWindow(QWidget):
             debug_log(f"ring_container geometry = {self._ring_container_rect}")
             return
 
-        g = screen.geometry()
         avail = screen.availableGeometry()
-        self.setGeometry(g)
 
         available_span = max(180, min(avail.width() - 20, avail.height() - 20))
         ring_size = max(MIN_WINDOW_SIZE, min(WINDOW_SIZE, available_span))
         ring_size = min(ring_size, max(180, avail.width()), max(180, avail.height()))
-        min_x = max(0, avail.x() - g.x())
-        min_y = max(0, avail.y() - g.y())
-        max_x = max(min_x, avail.x() - g.x() + max(0, avail.width() - ring_size))
-        max_y = max(min_y, avail.y() - g.y() + max(0, avail.height() - ring_size))
-        local_x = pos.x() - g.x() - ring_size // 2
-        local_y = pos.y() - g.y() - ring_size // 2
-        local_x = max(min_x, min(local_x, max_x))
-        local_y = max(min_y, min(local_y, max_y))
-        self._ring_container_rect = QRectF(local_x, local_y, ring_size, ring_size)
+        min_x = avail.left()
+        min_y = avail.top()
+        max_x = max(min_x, avail.right() - ring_size + 1)
+        max_y = max(min_y, avail.bottom() - ring_size + 1)
+        window_x = max(min_x, min(pos.x() - ring_size // 2, max_x))
+        window_y = max(min_y, min(pos.y() - ring_size // 2, max_y))
+        self.setGeometry(window_x, window_y, ring_size, ring_size)
+        self._ring_container_rect = QRectF(0, 0, ring_size, ring_size)
         debug_log(f"ring_container geometry = {self._ring_container_rect}")
 
-    @staticmethod
-    def _slot_centre(index: int) -> tuple[float, float]:
-        angle = 2 * math.pi * index / NUM_SLOTS - math.pi / 2
+    def _slot_centre(self, index: int) -> tuple[float, float]:
+        angle = (
+            2 * math.pi * index / self._slot_count()
+            - math.pi / 2
+            + self._rotation_angle
+        )
         c = WINDOW_SIZE / 2
         return (
             c + ITEM_ORBIT * math.cos(angle),
             c + ITEM_ORBIT * math.sin(angle),
         )
 
+    def _slot_count(self) -> int:
+        return max(NUM_SLOTS, min(len(self._current_items), MAX_DIRECT_SLOTS))
+
     def _hit_centre(self, pos: QPointF) -> bool:
         c = WINDOW_SIZE / 2
         return math.hypot(pos.x() - c, pos.y() - c) <= CENTER_RADIUS + _HIT_PADDING
 
     def _hit_slot(self, pos: QPointF) -> int:
-        for i in range(NUM_SLOTS):
+        items = self._current_items
+        for i in range(self._slot_count()):
             sx, sy = self._slot_centre(i)
             if math.hypot(pos.x() - sx, pos.y() - sy) <= ITEM_RADIUS + _HIT_PADDING:
                 return i
+            if i < len(items) and self._label_card_rect(
+                WINDOW_SIZE / 2,
+                sx,
+                sy,
+                items[i].label,
+            ).adjusted(-4, -4, 4, 4).contains(pos):
+                return i
         return -1
+
+    def _label_card_rect(
+        self,
+        c: float,
+        sx: float,
+        sy: float,
+        label: str,
+    ) -> QRectF:
+        dx, dy = sx - c, sy - c
+        dist = math.hypot(dx, dy) or 1.0
+        nx, ny = dx / dist, dy / dist
+        half_h = _LABEL_H / 2
+        card_cx = sx + nx * (ITEM_RADIUS + _LABEL_GAP + half_h)
+        card_cy = sy + ny * (ITEM_RADIUS + _LABEL_GAP + half_h)
+        text_w = min(QFontMetricsF(self._font_label).horizontalAdvance(label), _LABEL_MAX_W)
+        card_w = text_w + _LABEL_PADX * 2 + 6
+        return QRectF(
+            card_cx - card_w / 2,
+            card_cy - half_h,
+            card_w,
+            _LABEL_H,
+        )
 
     def _overlay_to_ring_pos(self, pos: QPointF) -> QPointF:
         container_scale = self._ring_container_rect.width() / WINDOW_SIZE if self._ring_container_rect.width() else 1.0
@@ -442,6 +517,25 @@ class RingWindow(QWidget):
             (pos.x() - self._ring_container_rect.left()) / container_scale,
             (pos.y() - self._ring_container_rect.top()) / container_scale,
         )
+
+    @staticmethod
+    def _angle_from_centre(pos: QPointF) -> float:
+        c = WINDOW_SIZE / 2
+        return math.atan2(pos.y() - c, pos.x() - c)
+
+    @staticmethod
+    def _angle_delta(current: float, previous: float) -> float:
+        """Return the shortest signed angular delta across the -pi/pi seam."""
+        return (current - previous + math.pi) % (2 * math.pi) - math.pi
+
+    def _cancel_ring_drag(self) -> None:
+        self._drag_slot = -1
+        self._ring_drag_active = False
+        self.unsetCursor()
+
+    def _update_ring(self) -> None:
+        """Repaint only the ring area instead of the full-screen overlay."""
+        self.update(self._ring_container_rect.toAlignedRect())
 
     # ── Events ────────────────────────────────────────────────────────────────
 
@@ -491,8 +585,13 @@ class RingWindow(QWidget):
 
             idx = self._hit_slot(pos)
             if idx != -1 and idx < len(self._current_items):
-                debug_log(f"click inside ring ignored: action slot={idx}")
-                self._drill_into(self._current_items[idx])
+                # Defer activation until release so the same gesture can rotate
+                # the whole ring without accidentally launching this action.
+                self._drag_slot = idx
+                self._drag_start_pos = QPointF(pos)
+                self._drag_last_angle = self._angle_from_centre(pos)
+                self._ring_drag_active = False
+                debug_log(f"ring slot press pending: slot={idx}")
                 event.accept()
                 return
 
@@ -502,11 +601,38 @@ class RingWindow(QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
-        pos      = event.position()
+        pos = event.position()
+        if self._drag_slot != -1 and event.buttons() & Qt.MouseButton.LeftButton:
+            ring_pos = self._overlay_to_ring_pos(pos)
+            moved = math.hypot(
+                ring_pos.x() - self._drag_start_pos.x(),
+                ring_pos.y() - self._drag_start_pos.y(),
+            )
+            if not self._ring_drag_active and moved >= _DRAG_THRESHOLD:
+                self._ring_drag_active = True
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                debug_log(f"ring rotation started: slot={self._drag_slot}")
+
+            if self._ring_drag_active:
+                c = WINDOW_SIZE / 2
+                if math.hypot(ring_pos.x() - c, ring_pos.y() - c) > CENTER_RADIUS:
+                    current_angle = self._angle_from_centre(ring_pos)
+                    self._rotation_angle += self._angle_delta(
+                        current_angle,
+                        self._drag_last_angle,
+                    )
+                    self._drag_last_angle = current_angle
+                    self._hovered_slot = self._drag_slot
+                    self._center_hovered = False
+                    self._update_ring()
+                event.accept()
+                return
+
         if not self._ring_container_rect.contains(pos):
             if self._hovered_slot != -1 or self._center_hovered:
                 self._reset_hover()
-                self.update()
+                self._update_ring()
+            self.unsetCursor()
             super().mouseMoveEvent(event)
             return
         pos      = self._overlay_to_ring_pos(pos)
@@ -515,8 +641,34 @@ class RingWindow(QWidget):
         if new_slot != self._hovered_slot or on_ctr != self._center_hovered:
             self._hovered_slot   = new_slot
             self._center_hovered = on_ctr
-            self.update()
+            self._update_ring()
+        if on_ctr or 0 <= new_slot < len(self._current_items):
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.unsetCursor()
         super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_slot != -1:
+            pressed_slot = self._drag_slot
+            was_dragging = self._ring_drag_active
+            self._cancel_ring_drag()
+
+            if was_dragging:
+                debug_log(
+                    f"ring rotation finished: radians={self._rotation_angle:.3f}"
+                )
+                self._update_ring()
+            elif self._ring_container_rect.contains(event.position()):
+                ring_pos = self._overlay_to_ring_pos(event.position())
+                released_slot = self._hit_slot(ring_pos)
+                if released_slot == pressed_slot and pressed_slot < len(self._current_items):
+                    debug_log(f"ring slot clicked: slot={pressed_slot}")
+                    self._drill_into(self._current_items[pressed_slot])
+
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def showEvent(self, event) -> None:
         debug_log("ring show")
@@ -530,6 +682,7 @@ class RingWindow(QWidget):
         self._pressed_inside_ring = False
         self._ignore_next_click = False
         self._active_action = None
+        self._cancel_ring_drag()
         self._stop_theme_timer()
         debug_log(
             "hideEvent reset completed: "
@@ -540,11 +693,11 @@ class RingWindow(QWidget):
 
     # ── Painting ──────────────────────────────────────────────────────────────
 
-    def paintEvent(self, _event) -> None:
+    def paintEvent(self, event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-        p.fillRect(self.rect(), QColor(0, 0, 0, 1))
+        p.fillRect(event.rect(), QColor(0, 0, 0, 1))
 
         p.save()
         p.translate(self._ring_container_rect.left(), self._ring_container_rect.top())
@@ -556,7 +709,6 @@ class RingWindow(QWidget):
         p.translate(-c, -c)
 
         self._draw_launcher_grid(p, c)
-        self._draw_ring_lines(p)
         self._draw_slot_shadows(p)
         self._draw_slots(p, c)
         self._draw_centre_btn(p, c)
@@ -564,18 +716,28 @@ class RingWindow(QWidget):
         p.restore()
         p.end()
 
-    # ── Connecting lines ──────────────────────────────────────────────────────
+    # ── Constellation background ──────────────────────────────────────────────
 
     def _draw_launcher_grid(self, p: QPainter, c: float) -> None:
-        """Subtle dark-neon orbit guides behind the actionable slots."""
+        """Theme-tinted star field and selected zodiac constellation."""
+        accent = QColor(self._c_glow)
+        center_color = QColor(
+            min(255, 16 + accent.red() // 8),
+            min(255, 20 + accent.green() // 8),
+            min(255, 38 + accent.blue() // 7),
+            238,
+        )
         halo = QRadialGradient(c, c, ITEM_ORBIT + 84)
-        halo.setColorAt(0.0, QColor(VOID))
-        halo.setColorAt(0.36, QColor(CHARCOAL))
-        halo.setColorAt(0.72, QColor(VOID))
+        halo.setColorAt(0.0, center_color)
+        halo.setColorAt(0.42, QColor(13, 18, 38, 232))
+        halo.setColorAt(0.76, QColor(7, 12, 27, 210))
         halo.setColorAt(1.0, QColor(0, 0, 0, 0))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(halo))
         p.drawEllipse(QPointF(c, c), ITEM_ORBIT + 86, ITEM_ORBIT + 86)
+
+        self._draw_star_field(p, c, accent)
+        self._draw_constellation(p, c, QColor(self._constellation_color))
 
         p.setBrush(Qt.BrushStyle.NoBrush)
         for radius, alpha, width in (
@@ -596,8 +758,9 @@ class RingWindow(QWidget):
         tick_color.setAlpha(70)
         tick_pen.setColor(tick_color)
         p.setPen(tick_pen)
-        for i in range(NUM_SLOTS):
-            angle = 2 * math.pi * i / NUM_SLOTS - math.pi / 2
+        slot_count = self._slot_count()
+        for i in range(slot_count):
+            angle = 2 * math.pi * i / slot_count - math.pi / 2 + self._rotation_angle
             inner = ITEM_ORBIT - 46
             outer = ITEM_ORBIT - 34
             p.drawLine(
@@ -610,25 +773,52 @@ class RingWindow(QWidget):
             )
         p.setPen(Qt.PenStyle.NoPen)
 
-    def _draw_ring_lines(self, p: QPainter) -> None:
-        """Thin lines between adjacent occupied slot centres (behind circles)."""
-        items = self._current_items
-        line_color = QColor(self._c_line)
-        line_color.setAlpha(max(48, min(110, line_color.alpha())))
-        pen = QPen(line_color, 1.1)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        p.setPen(pen)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        for i in range(NUM_SLOTS):
-            j = (i + 1) % NUM_SLOTS
-            has_i = i < len(items)
-            has_j = j < len(items)
-            if not has_i and not has_j:
-                continue
-            sx_i, sy_i = self._slot_centre(i)
-            sx_j, sy_j = self._slot_centre(j)
-            p.drawLine(QLineF(sx_i, sy_i, sx_j, sy_j))
+    def _draw_star_field(self, p: QPainter, c: float, accent: QColor) -> None:
+        """Draw a deterministic star field without loading another asset."""
         p.setPen(Qt.PenStyle.NoPen)
+        for index in range(42):
+            angle = math.radians((index * 137.508 + 19.0) % 360.0)
+            radius = 30.0 + float((index * 53) % 150)
+            x = c + math.cos(angle) * radius
+            y = c + math.sin(angle) * radius
+            star_radius = 0.55 + (index % 4) * 0.22
+            color = QColor(220, 232, 255, 44 + (index % 5) * 14)
+            if index % 7 == 0:
+                color = QColor(accent)
+                color.setAlpha(105)
+                star_radius += 0.45
+            p.setBrush(color)
+            p.drawEllipse(QPointF(x, y), star_radius, star_radius)
+
+    def _draw_constellation(self, p: QPainter, c: float, accent: QColor) -> None:
+        data = CONSTELLATIONS.get(
+            self._constellation_id,
+            CONSTELLATIONS[DEFAULT_CONSTELLATION],
+        )
+        left, top, width, height = c - 142.0, c - 121.0, 284.0, 242.0
+        points = [
+            QPointF(left + x * width, top + y * height)
+            for x, y, _brightness in data["stars"]
+        ]
+
+        line_color = QColor(accent)
+        line_color.setAlpha(92)
+        line_pen = QPen(line_color, 1.15)
+        line_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(line_pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for start, end in data["links"]:
+            p.drawLine(QLineF(points[start], points[end]))
+
+        p.setPen(Qt.PenStyle.NoPen)
+        for point, (_x, _y, brightness) in zip(points, data["stars"]):
+            glow = QColor(accent)
+            glow.setAlpha(int(38 + brightness * 34))
+            p.setBrush(glow)
+            p.drawEllipse(point, 3.0 + brightness * 1.6, 3.0 + brightness * 1.6)
+            p.setBrush(QColor(238, 246, 255, int(150 + brightness * 95)))
+            core_radius = 0.85 + brightness * 0.85
+            p.drawEllipse(point, core_radius, core_radius)
 
     # ── Slot decorations (theme textures) ────────────────────────────────────
 
@@ -637,7 +827,7 @@ class RingWindow(QWidget):
     def _draw_slot_shadows(self, p: QPainter) -> None:
         items = self._current_items
         p.setPen(Qt.PenStyle.NoPen)
-        for i in range(NUM_SLOTS):
+        for i in range(self._slot_count()):
             item = items[i] if i < len(items) else None
             if item is None:
                 continue
@@ -653,7 +843,7 @@ class RingWindow(QWidget):
 
     def _draw_slots(self, p: QPainter, c: float) -> None:
         items = self._current_items
-        for i in range(NUM_SLOTS):
+        for i in range(self._slot_count()):
             sx, sy = self._slot_centre(i)
             item   = items[i] if i < len(items) else None
             hov    = (i == self._hovered_slot)
@@ -750,21 +940,11 @@ class RingWindow(QWidget):
         label: str,
         hovered: bool,
     ) -> None:
-        dx, dy = sx - c, sy - c
-        dist   = math.hypot(dx, dy) or 1.0
-        nx, ny = dx / dist, dy / dist
-
-        half_h  = _LABEL_H / 2
-        card_cx = sx + nx * (ITEM_RADIUS + _LABEL_GAP + half_h)
-        card_cy = sy + ny * (ITEM_RADIUS + _LABEL_GAP + half_h)
-
         p.setFont(self._font_label)
-        fm     = p.fontMetrics()
-        text_w = min(fm.horizontalAdvance(label), _LABEL_MAX_W)
-        card_w = text_w + _LABEL_PADX * 2 + 6
-
-        x0 = card_cx - card_w / 2
-        y0 = card_cy - half_h
+        rect = self._label_card_rect(c, sx, sy, label)
+        x0, y0 = rect.left(), rect.top()
+        card_w = rect.width()
+        text_w = card_w - _LABEL_PADX * 2 - 6
 
         shadow = QPainterPath()
         shadow.addRoundedRect(x0, y0 + 3, card_w, _LABEL_H, _LABEL_R, _LABEL_R)

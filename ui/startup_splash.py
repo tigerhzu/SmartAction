@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt, QUrl, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QMovie, QPixmap
 from PySide6.QtWidgets import (
     QLabel,
@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from core.debug_log import debug_log
 from core.paths import BUNDLE_DIR
-from ui.style_tokens import ASH, BONE, CHARCOAL, EMBER, EMBER_HOVER, EMBER_PRESSED, FOG, VOID
+from ui.style_tokens import ASH, BONE, CHARCOAL, EMBER, EMBER_HOVER, EMBER_PRESSED, VOID
 from ui.window_utils import center_window, fit_window_to_screen
 
 
@@ -31,19 +31,14 @@ class StartupSplash(QWidget):
         self._media_path = media_path
         self._duration_ms = max(1, min(int(duration_seconds or 5), 5)) * 1000
         self._finished = False
-        self._player = None
-        self._audio = None
         self._movie = None
-        self._media_widget: QWidget | None = None
         self._source_pixmap: QPixmap | None = None
         self._build_ui()
 
     def start(self) -> bool:
         suffix = self._media_path.suffix.lower()
         try:
-            if suffix == ".mp4":
-                ok = self._start_mp4()
-            elif suffix == ".gif":
+            if suffix == ".gif":
                 ok = self._start_gif()
             elif suffix in {".png", ".jpg", ".jpeg"}:
                 ok = self._start_image()
@@ -131,34 +126,6 @@ class StartupSplash(QWidget):
         self._skip.clicked.connect(self._finish)
         root.addWidget(self._skip, alignment=Qt.AlignmentFlag.AlignRight)
 
-    def _start_mp4(self) -> bool:
-        if not self._media_path.exists():
-            return False
-        try:
-            from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-            from PySide6.QtMultimediaWidgets import QVideoWidget
-        except Exception as exc:
-            debug_log(f"Qt Multimedia unavailable for startup mp4: {exc}")
-            return False
-
-        video = QVideoWidget(self)
-        video.setStyleSheet(f"background: {CHARCOAL}; border: 1px solid {ASH}; border-radius: 3px;")
-        self.layout().replaceWidget(self._host, video)
-        self._host.hide()
-        self._media_widget = video
-
-        self._player = QMediaPlayer(self)
-        self._audio = QAudioOutput(self)
-        self._audio.setMuted(True)
-        self._audio.setVolume(0)
-        self._player.setAudioOutput(self._audio)
-        self._player.setVideoOutput(video)
-        self._player.errorOccurred.connect(self._on_media_error)
-        self._player.mediaStatusChanged.connect(self._on_media_status)
-        self._player.setSource(QUrl.fromLocalFile(str(self._media_path)))
-        self._player.play()
-        return True
-
     def _start_gif(self) -> bool:
         if not self._media_path.exists():
             return False
@@ -180,18 +147,6 @@ class StartupSplash(QWidget):
         self._source_pixmap = pixmap
         self._apply_image_pixmap()
         return True
-
-    def _on_media_error(self, *_args) -> None:
-        debug_log(f"startup splash media playback failed: {self._media_path}")
-        self._finish()
-
-    def _on_media_status(self, status) -> None:
-        try:
-            from PySide6.QtMultimedia import QMediaPlayer
-            if status == QMediaPlayer.MediaStatus.EndOfMedia:
-                self._finish()
-        except Exception:
-            return
 
     def _center_on_screen(self) -> None:
         center_window(self)
@@ -224,8 +179,6 @@ class StartupSplash(QWidget):
             return
         self._finished = True
         try:
-            if self._player is not None:
-                self._player.stop()
             if self._movie is not None:
                 self._movie.stop()
         except Exception:
@@ -236,7 +189,7 @@ class StartupSplash(QWidget):
 
 
 def resolve_startup_media(config_path: str | None = None) -> Path | None:
-    configured = Path(config_path or "assets/startup/startup.mp4")
+    configured = Path(config_path or "assets/startup/startup.png")
     candidates: list[Path] = []
 
     if configured.is_absolute():

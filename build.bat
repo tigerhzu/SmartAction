@@ -145,13 +145,6 @@ if not exist "%APPDIR%\_internal\data\icons\emoji_database.json" (
     echo BUILD FAILED - data/icons/emoji_database.json was not bundled.
     exit /b 1
 )
-if exist assets\startup\startup.mp4 (
-    if not exist "%APPDIR%\assets\startup\startup.mp4" (
-        echo.
-        echo BUILD FAILED - assets/startup/startup.mp4 was not copied next to exe.
-        exit /b 1
-    )
-)
 if exist assets\startup\startup.gif (
     if not exist "%APPDIR%\assets\startup\startup.gif" (
         echo.

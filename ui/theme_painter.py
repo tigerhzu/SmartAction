@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import math
 from pathlib import Path
 
-from PySide6.QtCore import QLineF, QPointF, QRectF, Qt
+from PySide6.QtCore import QLineF, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -21,6 +21,7 @@ from PySide6.QtGui import (
     QPen,
     QPixmap,
     QRadialGradient,
+    QImageReader,
 )
 
 from core.debug_log import debug_log
@@ -28,7 +29,9 @@ from core.paths import ASSETS_DIR
 
 _ASSET_ROOT = ASSETS_DIR / "themes"
 _ASSET_CACHE: dict[str, "ThemeAssets"] = {}
+_FRAME_COUNT_CACHE: dict[str, int] = {}
 _DRAW_LOGGED: set[tuple[str, str]] = set()
+_MAX_RIM_PIXELS = 160
 
 
 @dataclass
@@ -36,9 +39,9 @@ class ThemeAssets:
     base_path: Path
     frames_path: Path
     rim: QPixmap | None
-    rim_active: QPixmap | None
     card_bg: QPixmap | None
     frames: list[QPixmap]
+    frames_fully_loaded: bool
 
     @property
     def has_rim(self) -> bool:
@@ -50,35 +53,46 @@ class ThemeAssets:
         return self.rim
 
 
-def _load_pixmap(path: Path) -> QPixmap | None:
+def _load_pixmap(path: Path, max_pixels: int | None = None) -> QPixmap | None:
     if not path.exists():
         return None
-    pix = QPixmap(str(path))
+    reader = QImageReader(str(path))
+    if max_pixels:
+        size = reader.size()
+        if size.isValid() and (size.width() > max_pixels or size.height() > max_pixels):
+            reader.setScaledSize(
+                size.scaled(
+                    QSize(max_pixels, max_pixels),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                )
+            )
+    image = reader.read()
+    if image.isNull():
+        return None
+    pix = QPixmap.fromImage(image)
     return None if pix.isNull() else pix
 
 
-def preload_theme_assets(theme_id: str) -> ThemeAssets:
-    """Load and cache all pixmaps for a theme. Missing files simply stay None."""
+def preload_theme_assets(theme_id: str, load_all_frames: bool = True) -> ThemeAssets:
+    """Load and cache theme pixmaps, optionally using only the first frame."""
     cached = _ASSET_CACHE.get(theme_id)
     if cached is not None:
+        if load_all_frames and not cached.frames_fully_loaded:
+            cached.frames = _load_theme_frames(cached.frames_path, True)
+            cached.frames_fully_loaded = True
         return cached
 
     base = _ASSET_ROOT / theme_id
     frames_dir = base / "frames"
-    frames: list[QPixmap] = []
-    if frames_dir.exists():
-        for frame_path in sorted(frames_dir.glob("frame_*.png")):
-            pix = _load_pixmap(frame_path)
-            if pix is not None:
-                frames.append(pix)
+    frames = _load_theme_frames(frames_dir, load_all_frames)
 
     assets = ThemeAssets(
         base_path=base,
         frames_path=frames_dir,
-        rim=_load_pixmap(base / "rim.png"),
-        rim_active=_load_pixmap(base / "rim_active.png"),
+        rim=_load_pixmap(base / "rim.png", _MAX_RIM_PIXELS),
         card_bg=_load_pixmap(base / "card_bg.png"),
         frames=frames,
+        frames_fully_loaded=load_all_frames,
     )
     _ASSET_CACHE[theme_id] = assets
     debug_log(
@@ -91,23 +105,48 @@ def preload_theme_assets(theme_id: str) -> ThemeAssets:
     return assets
 
 
+def _load_theme_frames(frames_dir: Path, load_all: bool) -> list[QPixmap]:
+    if not frames_dir.exists():
+        return []
+    frame_paths = sorted(frames_dir.glob("frame_*.png"))
+    if not load_all:
+        frame_paths = frame_paths[:1]
+    frames: list[QPixmap] = []
+    for frame_path in frame_paths:
+        pix = _load_pixmap(frame_path, _MAX_RIM_PIXELS)
+        if pix is not None:
+            frames.append(pix)
+    return frames
+
+
 def theme_frame_count(theme_id: str) -> int:
-    return len(preload_theme_assets(theme_id).frames)
+    cached = _FRAME_COUNT_CACHE.get(theme_id)
+    if cached is None:
+        frames_dir = _ASSET_ROOT / theme_id / "frames"
+        cached = sum(1 for _ in frames_dir.glob("frame_*.png")) if frames_dir.exists() else 0
+        _FRAME_COUNT_CACHE[theme_id] = cached
+    return cached
 
 
 def theme_asset_debug_summary(theme_id: str) -> str:
-    assets = preload_theme_assets(theme_id)
-    mode = "animated asset" if assets.frames else "static png fallback" if assets.rim else "painter fallback"
-    selected_path = assets.frames_path if assets.frames else assets.base_path / "rim.png"
+    base_path = _ASSET_ROOT / theme_id
+    frames_path = base_path / "frames"
+    frame_count = theme_frame_count(theme_id)
+    rim_path = base_path / "rim.png"
+    mode = "animated asset" if frame_count else "static png fallback" if rim_path.exists() else "painter fallback"
+    selected_path = frames_path if frame_count else rim_path
     return (
         f"theme_id={theme_id!r} selected_theme_asset_path={selected_path.resolve()} "
-        f"asset_exists={selected_path.exists()} frames_count={len(assets.frames)} "
+        f"asset_exists={selected_path.exists()} frames_count={frame_count} "
         f"using={mode}"
     )
 
 
-def any_theme_frames(theme_ids: list[str] | tuple[str, ...]) -> bool:
-    return any(theme_frame_count(theme_id) > 1 for theme_id in theme_ids)
+def prune_theme_asset_cache(keep_theme_ids: set[str]) -> None:
+    """Release decoded pixmaps for themes that are no longer on screen."""
+    for theme_id in tuple(_ASSET_CACHE):
+        if theme_id not in keep_theme_ids:
+            del _ASSET_CACHE[theme_id]
 
 
 def _draw_pixmap_cover(p: QPainter, pix: QPixmap, rect: QRectF) -> None:
@@ -137,7 +176,7 @@ def _draw_pixmap_cover(p: QPainter, pix: QPixmap, rect: QRectF) -> None:
 
 def draw_theme_card_background(p: QPainter, rect: QRectF, theme_id: str) -> bool:
     """Draw card_bg.png if available. Returns True when an asset was used."""
-    pix = preload_theme_assets(theme_id).card_bg
+    pix = preload_theme_assets(theme_id, load_all_frames=False).card_bg
     if pix is None:
         return False
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
@@ -182,6 +221,7 @@ def draw_energy_bubble(
     rim_width: float | None = None,
     inner_fill: QColor | None = None,
     frame_index: int = 0,
+    animate: bool = True,
 ) -> None:
     """Draw an outer glow, textured rim, and clean inner glass center."""
     rim_w = rim_width if rim_width is not None else max(7.0, outer_r * 0.28)
@@ -198,10 +238,16 @@ def draw_energy_bubble(
         p.setBrush(QBrush(g))
         p.drawEllipse(QPointF(cx, cy), outer_r + grow, outer_r + grow)
 
-    assets = preload_theme_assets(theme_id)
+    assets = preload_theme_assets(theme_id, load_all_frames=animate)
     pix = assets.ring_pixmap(frame_index)
     if pix is not None:
-        mode = "animated asset" if assets.frames else "static png fallback"
+        mode = (
+            "animated asset"
+            if assets.frames_fully_loaded and len(assets.frames) > 1
+            else "static preview frame"
+            if assets.frames
+            else "static png fallback"
+        )
         key = (theme_id, mode)
         if key not in _DRAW_LOGGED:
             selected_path = assets.frames_path if assets.frames else assets.base_path / "rim.png"
