@@ -1,7 +1,6 @@
 """Shared Qt widget factories used across Settings pages and form dialogs."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QLineEdit
 
 from ui.style_tokens import ASH, BONE, CHARCOAL, EMBER, FOG, STEEL, VOID

@@ -54,7 +54,6 @@ from ui.style_tokens import (
     SIGNAL_GREEN,
     SIGNAL_GREEN_WASH,
     SIGNAL_RED,
-    SIGNAL_RED_HOVER,
     SIGNAL_RED_WASH,
     STEEL,
     VOID,
@@ -780,11 +779,6 @@ class ClientWorkspaceWindow(QDialog):
             return
         self._selected_id = client["id"]
         self._refresh_clients()
-
-    def keyPressEvent(self, event) -> None:
-        if handle_fullscreen_shortcut(self, event):
-            return
-        super().keyPressEvent(event)
 
     def _edit_client(self) -> None:
         client = self._current_client()

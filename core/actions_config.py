@@ -15,7 +15,7 @@ Schema summary
       "label":       "AI",           # full label shown in floating card
       "short_label": "AI",           # 1-3 chars shown inside the slot circle
       "icon":        "",             # emoji overrides short_label if set
-      "type":        "folder",       # "folder"|"url"|"command"|"powershell"|"powershell_library"|"environment_check"|"client_workspace"|"paste"|"form"|"ps_form"
+      "type":        "folder",       # includes "settings" for opening Settings from the ring
       "target":      "",             # URL, command string, or form id
       "script_id":   "",             # legacy only; powershell_library now opens the library window
       "enabled":     true,           # false → hidden from ring
@@ -32,6 +32,7 @@ the ring and will be the only config once the Settings GUI is updated.
 """
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 from pathlib import Path
@@ -43,12 +44,27 @@ from core.paths import CONFIG_DIR as _CONFIG_DIR
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 _CONFIG_PATH = _CONFIG_DIR / "actions.json"
+_CONFIG_VERSION = "1.1"
+
+_SETTINGS_ACTION: dict = {
+    "id":          "settings",
+    "label":       "Settings",
+    "short_label": "SET",
+    "icon":        "",
+    "type":        "settings",
+    "target":      "",
+    "enabled":     True,
+    "sub_actions": [],
+}
 
 # ── Default config (written on first run) ────────────────────────────────────
 
 _DEFAULTS: dict = {
-    "version": "1.0",
+    "version": _CONFIG_VERSION,
     "hotkey": "ctrl+space",
+    "theme": "tiger",
+    "constellation": "scorpio",
+    "constellation_color": "#F2760B",
     "actions": [
         {
             "id":          "ai",
@@ -108,6 +124,7 @@ _DEFAULTS: dict = {
                 },
             ],
         },
+        _SETTINGS_ACTION,
     ],
 }
 
@@ -143,23 +160,52 @@ class ActionsConfig:
             with open(self._path, encoding="utf-8") as f:
                 try:
                     data = json.load(f)
+                    data, changed = self._migrate(data)
+                    if changed:
+                        self._write_data(data)
                     debug_log(f"loaded existing actions config: {self._path.resolve()}")
                     return data
                 except json.JSONDecodeError as exc:
                     print(f"[ActionsConfig] Corrupt JSON ({exc}); regenerating defaults.")
 
         # First run or corrupt file → write defaults
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self._path, "w", encoding="utf-8") as f:
-            json.dump(_DEFAULTS, f, indent=2, ensure_ascii=False)
+        data = copy.deepcopy(_DEFAULTS)
+        self._write_data(data)
         print(f"[ActionsConfig] Created default config: {self._path}")
         debug_log("default actions config was auto-created")
-        return dict(_DEFAULTS)
+        return data
 
-    def _save(self) -> None:
+    def _migrate(self, data: dict) -> tuple[dict, bool]:
+        """Upgrade known legacy configs without replacing user actions."""
+        version = str(data.get("version", ""))
+        if version not in {"", "1.0"}:
+            return data, False
+
+        data.setdefault("constellation", _DEFAULTS["constellation"])
+        data.setdefault("constellation_color", _DEFAULTS["constellation_color"])
+        actions = data.setdefault("actions", [])
+        if isinstance(actions, list) and not any(
+            action.get("type") == "settings"
+            for action in actions
+            if isinstance(action, dict)
+        ):
+            # Keep Settings inside the eight visible root slots on legacy
+            # configs, matching its position in the current defaults.
+            actions.insert(min(2, len(actions)), copy.deepcopy(_SETTINGS_ACTION))
+        data["version"] = _CONFIG_VERSION
+        debug_log(
+            f"migrated actions config from version {version or 'unversioned'} "
+            f"to {_CONFIG_VERSION}"
+        )
+        return data, True
+
+    def _write_data(self, data: dict) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._path, "w", encoding="utf-8") as f:
-            json.dump(self._data, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    def _save(self) -> None:
+        self._write_data(self._data)
 
     # ── Hotkey ────────────────────────────────────────────────────────────────
 
@@ -177,6 +223,27 @@ class ActionsConfig:
 
     def set_theme(self, theme_id: str) -> None:
         self._data["theme"] = theme_id
+        self._save()
+
+    def get_constellation(self) -> str:
+        from core.constellation import CONSTELLATIONS, DEFAULT_CONSTELLATION
+
+        value = str(self._data.get("constellation", DEFAULT_CONSTELLATION))
+        return value if value in CONSTELLATIONS else DEFAULT_CONSTELLATION
+
+    def set_constellation(self, constellation_id: str) -> None:
+        self._data["constellation"] = constellation_id
+        self._save()
+
+    def get_constellation_color(self) -> str:
+        from core.constellation import normalise_constellation_color
+
+        return normalise_constellation_color(self._data.get("constellation_color"))
+
+    def set_constellation_color(self, color: str) -> None:
+        from core.constellation import normalise_constellation_color
+
+        self._data["constellation_color"] = normalise_constellation_color(color)
         self._save()
 
     # ── Actions → MenuItem tree ───────────────────────────────────────────────
@@ -219,6 +286,7 @@ class ActionsConfig:
             "powershell_library": "powershell_library",
             "environment_check": "environment_check",
             "client_workspace": "client_workspace",
+            "settings":   "settings",
             "app":        "app",
             "paste":      "paste",
             "form":       "form",

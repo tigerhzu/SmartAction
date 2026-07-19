@@ -18,7 +18,6 @@ center         Centre close/back button fill
 center_x       Centre button fill when hovering over close action
 center_b       Centre button fill when hovering over back action
 rim            Inner highlight ring on the bubble edge
-line           Thin connecting lines between adjacent slots
 empty          Ghost ring for empty slot positions
 card_bg        Floating label card background
 card_text      Floating label card text
@@ -44,7 +43,6 @@ THEMES: dict[str, dict] = {
         "center_x":      (220,  50,  50, 245),
         "center_b":      ( 88,  28, 175, 245),
         "rim":           (255, 255, 255,  55),
-        "line":          (139,  92, 246,  80),
         "empty":         (170, 140, 230,  22),
         "card_bg":       (255, 255, 255, 252),
         "card_text":     ( 26,  18,  66, 255),
@@ -67,7 +65,6 @@ THEMES: dict[str, dict] = {
         "center_x":      (220,  50,  50, 245),
         "center_b":      (217,  92,  15, 245),
         "rim":           (255, 210, 120,  55),
-        "line":          (251, 146,  60,  80),
         "empty":         (200, 130,  55,  22),
         "card_bg":       (255, 247, 237, 252),
         "card_text":     ( 28,  15,   4, 255),
@@ -90,7 +87,6 @@ THEMES: dict[str, dict] = {
         "center_x":      (220,  50,  50, 245),
         "center_b":      ( 14, 132, 205, 245),
         "rim":           (186, 230, 253,  65),
-        "line":          (125, 211, 252,  80),
         "empty":         (100, 180, 230,  22),
         "card_bg":       (240, 249, 255, 252),
         "card_text":     (  8,  47,  73, 255),
@@ -113,7 +109,6 @@ THEMES: dict[str, dict] = {
         "center_x":      (220,  50,  50, 245),
         "center_b":      (200,  30,  30, 245),
         "rim":           (255, 160, 110,  55),
-        "line":          (248, 113, 113,  80),
         "empty":         (180,  60,  60,  22),
         "card_bg":       (254, 242, 242, 252),
         "card_text":     ( 69,  10,  10, 255),
@@ -136,7 +131,6 @@ THEMES: dict[str, dict] = {
         "center_x":      (220,  50,  50, 245),
         "center_b":      ( 75,  65, 200, 245),
         "rim":           (180, 180, 255,  55),
-        "line":          (129, 140, 248,  80),
         "empty":         ( 80,  80, 180,  22),
         "card_bg":       (238, 242, 255, 252),
         "card_text":     ( 30,  27,  75, 255),

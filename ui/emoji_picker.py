@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
-
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QDialog,
@@ -44,6 +42,7 @@ DATABASE_PATH = ICON_DATA_DIR / "emoji_database.json"
 BUNDLED_DATABASE_PATH = BUNDLE_DIR / "data" / "icons" / "emoji_database.json"
 STATE_PATH = ICON_DATA_DIR / "icon_picker_state.json"
 MAX_RECENT = 32
+RENDER_BATCH_SIZE = 64
 
 
 @dataclass(frozen=True)
@@ -67,6 +66,10 @@ def _u(codepoint: str) -> str:
 
 def _item(icon_hex: str, name: str, category: str, *keywords: str) -> IconItem:
     return IconItem(icon=_u(icon_hex), name=name, category=category, keywords=tuple(keywords))
+
+
+def _has_skin_tone_modifier(icon: str) -> bool:
+    return any(0x1F3FB <= ord(char) <= 0x1F3FF for char in icon)
 
 
 FALLBACK_CATALOG: list[IconItem] = [
@@ -137,7 +140,7 @@ def _load_catalog() -> list[IconItem]:
                     icon = str(raw.get("icon", "")).strip()
                     name = str(raw.get("name", "")).strip()
                     category = str(raw.get("category", "")).strip()
-                    if not icon or not name or not category:
+                    if not icon or not name or not category or _has_skin_tone_modifier(icon):
                         continue
                     keywords = tuple(str(x).casefold() for x in raw.get("keywords", []) if str(x).strip())
                     aliases = tuple(str(x).casefold() for x in raw.get("aliases", []) if str(x).strip())
@@ -362,6 +365,7 @@ class EmojiPickerDialog(QDialog):
         self._selected: IconItem | None = None
         self._visible_items: list[IconItem] = []
         self._buttons: list[IconCellButton] = []
+        self._render_generation = 0
         self._current_category = "Recent"
         self._build_ui()
         self._load_category("Recent")
@@ -532,6 +536,8 @@ class EmojiPickerDialog(QDialog):
         self._render_items(results)
 
     def _render_items(self, items: list[IconItem]) -> None:
+        self._render_generation += 1
+        generation = self._render_generation
         self._clear_grid()
         self._visible_items = items
         self._buttons = []
@@ -551,7 +557,15 @@ class EmojiPickerDialog(QDialog):
 
         self._empty_label.hide()
         self._scroll.show()
-        for idx, item in enumerate(items):
+        self._render_batch(generation, 0)
+
+    def _render_batch(self, generation: int, start: int) -> None:
+        """Create a small group of buttons, then yield to Qt's event loop."""
+        if generation != self._render_generation:
+            return
+        end = min(start + RENDER_BATCH_SIZE, len(self._visible_items))
+        for idx in range(start, end):
+            item = self._visible_items[idx]
             btn = IconCellButton(item.icon)
             btn.setFixedSize(self.BTN_SIZE, self.BTN_SIZE)
             btn.setToolTip(f"{item.name} - {item.category}")
@@ -562,6 +576,8 @@ class EmojiPickerDialog(QDialog):
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self._grid.addWidget(btn, idx // self.COLS, idx % self.COLS)
             self._buttons.append(btn)
+        if end < len(self._visible_items):
+            QTimer.singleShot(0, lambda: self._render_batch(generation, end))
 
     def _clear_grid(self) -> None:
         while self._grid.count():

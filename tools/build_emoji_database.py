@@ -146,6 +146,11 @@ def clean_words(text: str) -> list[str]:
     return [word for word in words if len(word) > 1]
 
 
+def has_skin_tone_modifier(icon: str) -> bool:
+    """Return whether an emoji sequence contains a Fitzpatrick modifier."""
+    return any(0x1F3FB <= ord(char) <= 0x1F3FF for char in icon)
+
+
 def parse_emoji_test(text: str) -> list[dict]:
     group = ""
     subgroup = ""
@@ -169,6 +174,10 @@ def parse_emoji_test(text: str) -> list[dict]:
         if not match:
             continue
         icon = match.group(1).strip()
+        # Keep only Unicode's default (yellow/unspecified) presentation. Skin
+        # tone variants account for thousands of near-identical picker cells.
+        if has_skin_tone_modifier(icon):
+            continue
         name = match.group(2).strip().title()
         name_key = name.casefold()
         key = (icon, group)

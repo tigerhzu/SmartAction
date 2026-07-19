@@ -7,7 +7,9 @@ Reserved (stub): Mouse Button 4 / 5  — token names: mouse4, mouse5
 
 from __future__ import annotations
 
-import keyboard
+import sys
+from collections.abc import Callable
+
 from PySide6.QtCore import QMetaObject, QObject, Qt, Signal, Slot
 
 from core.config_manager import ConfigManager
@@ -26,19 +28,28 @@ def _is_mouse_combo(combo: str) -> bool:
 
 
 class _KeyboardBackend:
-    """Global keyboard hotkeys via the `keyboard` library."""
+    """Fallback global hotkeys via the ``keyboard`` library."""
 
-    def register(self, combo: str, callback) -> bool:
+    def __init__(self) -> None:
+        self._handles: dict[str, object] = {}
+
+    def register(self, combo: str, callback: Callable[[], None]) -> bool:
         try:
-            keyboard.add_hotkey(combo, callback, suppress=False)
+            import keyboard
+
+            handle = keyboard.add_hotkey(combo, callback, suppress=False)
+            self._handles[combo] = handle
             return True
         except Exception as exc:
             print(f"[HotkeyManager] Cannot register '{combo}': {exc}")
             return False
 
     def unregister(self, combo: str) -> None:
+        handle = self._handles.pop(combo, combo)
         try:
-            keyboard.remove_hotkey(combo)
+            import keyboard
+
+            keyboard.remove_hotkey(handle)
         except (KeyError, ValueError):
             pass
 
@@ -90,7 +101,12 @@ class HotkeyManager(QObject):
         super().__init__(parent)
         self._config = config
         self._current_combo: str | None = None
-        self._kb = _KeyboardBackend()
+        if sys.platform == "win32":
+            from platforms.windows import WindowsHotkeyBackend
+
+            self._kb = WindowsHotkeyBackend()
+        else:
+            self._kb = _KeyboardBackend()
         self._mouse = _MouseBackend()
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -133,7 +149,7 @@ class HotkeyManager(QObject):
 
     # ── Internals ─────────────────────────────────────────────────────────────
 
-    def _backend_for(self, combo: str) -> _KeyboardBackend | _MouseBackend:
+    def _backend_for(self, combo: str):
         return self._mouse if _is_mouse_combo(combo) else self._kb
 
     def _register(self, combo: str) -> bool:
