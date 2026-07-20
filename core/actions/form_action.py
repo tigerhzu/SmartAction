@@ -20,11 +20,12 @@ from __future__ import annotations
 import json
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication, QInputDialog, QWidget
+from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QWidget
 
 from core.actions._clipboard import send_paste
 from core.actions.base import BaseAction
 from core.actions.registry import register_action
+from ui.window_utils import exec_dialog_on_screen
 
 
 @register_action
@@ -38,8 +39,13 @@ class FormAction(BaseAction):
         default  = form_def.get("default", "")
         parent: QWidget | None = context.get("parent_widget")
 
-        text, ok = QInputDialog.getText(parent, title, label, text=default)
-        if ok and text:
+        dialog = QInputDialog(parent)
+        dialog.setWindowTitle(title)
+        dialog.setLabelText(label)
+        dialog.setTextValue(default)
+        accepted = exec_dialog_on_screen(dialog, context.get("target_screen"))
+        text = dialog.textValue()
+        if accepted == QDialog.DialogCode.Accepted and text:
             QApplication.clipboard().setText(text)
             QTimer.singleShot(80, send_paste)
 

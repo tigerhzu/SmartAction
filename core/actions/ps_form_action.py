@@ -19,6 +19,7 @@ class PsFormAction(BaseAction):
     def execute(self, payload: str, context: dict) -> None:
         import ui.forms  # noqa: F401 — triggers @register_form decorators
         from ui.forms.form_registry import get_form, registered_forms
+        from ui.window_utils import exec_dialog_on_screen
 
         form_cls = get_form(payload)
         if form_cls is None:
@@ -30,4 +31,4 @@ class PsFormAction(BaseAction):
 
         parent = context.get("parent_widget")
         dialog = form_cls(parent=parent)
-        dialog.exec()
+        exec_dialog_on_screen(dialog, context.get("target_screen"))

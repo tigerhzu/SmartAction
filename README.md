@@ -18,7 +18,7 @@ SmartAction is a lightweight Windows action ring for shortcuts, automation, IT s
 前往 [GitHub Releases](https://github.com/tigerhzu/SmartAction/releases/latest)，下載：
 
 ```text
-SmartAction-Release-v1.1.0.zip
+SmartAction-Release-v1.2.0.zip
 ```
 
 請不要使用 GitHub 的 `Code > Download ZIP` 安裝程式；那是原始碼，不是已封裝的 Windows 版本。
@@ -37,7 +37,7 @@ SmartAction-Release-v1.1.0.zip
 
 ## 快速開始
 
-1. 下載並解壓縮 `SmartAction-Release-v1.1.0.zip`。
+1. 下載並解壓縮 `SmartAction-Release-v1.2.0.zip`。
 2. 將整個資料夾放到可寫入的位置，例如 `C:\Tools\SmartAction`。
 3. 執行 `install.bat` 建立桌面、開始功能表與開機啟動捷徑。
 4. 執行 `SmartAction.exe` 或 `start.bat`。
@@ -112,7 +112,7 @@ build_release.bat
 輸出位置：
 
 ```text
-dist\SmartAction-Release-v1.1.0\
+dist\SmartAction-Release-v1.2.0\
 ```
 
 ## 疑難排解
@@ -129,7 +129,7 @@ dist\SmartAction-Release-v1.1.0\
 - [動作類型](docs/action-types.md)
 - [設定檔匯入／匯出](docs/profile-import-export.md)
 - [Firefox Container Helper](docs/firefox-container-helper.md)
-- [v1.1.0 Release Notes](docs/release-notes-v1.1.0.md)
+- [v1.2.0 Release Notes](docs/release-notes-v1.2.0.md)
 
 ## 授權與安全提醒
 

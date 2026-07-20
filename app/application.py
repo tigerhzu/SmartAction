@@ -1,4 +1,5 @@
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QScreen
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from pathlib import Path
 
@@ -13,9 +14,10 @@ from core.paths import ASSETS_DIR, BUNDLE_DIR, CONFIG_DIR, DOCS_DIR
 from ui.ring_ui import RingWindow
 from ui.theme_painter import theme_asset_debug_summary
 from ui.tray_icon import TrayIcon
+from ui.window_utils import screen_at_cursor, show_window_on_screen
 
 _ACTION_DELAY_MS = 120
-_APP_VERSION = "1.1.0"
+_APP_VERSION = "1.2.0"
 
 
 class Application(QApplication):
@@ -137,23 +139,24 @@ class Application(QApplication):
             )
 
     def _on_item_activated(self, item: MenuItem) -> None:
+        target_screen = screen_at_cursor()
         context = {
             "parent_widget": None,
-            "open_settings": self._open_settings,
-            "open_powershell_library": self._open_powershell_library,
+            "target_screen": target_screen,
+            "open_settings": lambda: self._open_settings(target_screen),
+            "open_powershell_library": lambda: self._open_powershell_library(target_screen),
+            "open_client_workspace": lambda: self._open_client_workspace(target_screen),
         }
         QTimer.singleShot(_ACTION_DELAY_MS, lambda: self._runner.run(item, context))
 
-    def _open_settings(self) -> None:
+    def _open_settings(self, target_screen: QScreen | None = None) -> None:
         if self._settings_win is not None:
             debug_log(
                 "restoring existing settings window: "
                 f"visible={self._settings_win.isVisible()} "
                 f"minimized={self._settings_win.isMinimized()}"
             )
-            self._settings_win.showNormal()
-            self._settings_win.raise_()
-            self._settings_win.activateWindow()
+            show_window_on_screen(self._settings_win, target_screen)
             return
         raw_count = len(self._actions.get_raw_actions())
         enabled_count = len([a for a in self._actions.get_raw_actions() if a.get("enabled", True)])
@@ -177,9 +180,7 @@ class Application(QApplication):
             )
             return
         self._settings_win.finished.connect(self._on_settings_closed)
-        self._settings_win.show()
-        self._settings_win.raise_()
-        self._settings_win.activateWindow()
+        show_window_on_screen(self._settings_win, target_screen)
 
     def _on_settings_closed(self, result: int) -> None:
         self._settings_win = None
@@ -191,29 +192,23 @@ class Application(QApplication):
             if not ok:
                 print(f"[Application] Failed to register new hotkey: {new_combo!r}")
 
-    def _open_powershell_library(self) -> None:
+    def _open_powershell_library(self, target_screen: QScreen | None = None) -> None:
         from ui.powershell_library_window import PowerShellLibraryWindow
         if self._ps_library_win is not None:
-            self._ps_library_win.raise_()
-            self._ps_library_win.activateWindow()
+            show_window_on_screen(self._ps_library_win, target_screen)
             return
         self._ps_library_win = PowerShellLibraryWindow()
         self._ps_library_win.finished.connect(lambda _result: setattr(self, "_ps_library_win", None))
-        self._ps_library_win.show()
-        self._ps_library_win.raise_()
-        self._ps_library_win.activateWindow()
+        show_window_on_screen(self._ps_library_win, target_screen)
 
-    def _open_client_workspace(self) -> None:
+    def _open_client_workspace(self, target_screen: QScreen | None = None) -> None:
         from ui.client_workspace_window import ClientWorkspaceWindow
         if self._client_workspace_win is not None:
-            self._client_workspace_win.raise_()
-            self._client_workspace_win.activateWindow()
+            show_window_on_screen(self._client_workspace_win, target_screen)
             return
         self._client_workspace_win = ClientWorkspaceWindow()
         self._client_workspace_win.finished.connect(lambda _result: setattr(self, "_client_workspace_win", None))
-        self._client_workspace_win.show()
-        self._client_workspace_win.raise_()
-        self._client_workspace_win.activateWindow()
+        show_window_on_screen(self._client_workspace_win, target_screen)
 
     def _reload_config(self) -> None:
         if self._settings_win is not None:

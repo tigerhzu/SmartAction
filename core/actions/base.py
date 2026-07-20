@@ -6,6 +6,7 @@ An action receives:
   context : dict  — runtime values the caller injects
                     {
                       "parent_widget": QWidget | None,  # for dialogs
+                      "target_screen": QScreen | None,  # monitor that opened the Ring
                     }
 """
 from __future__ import annotations

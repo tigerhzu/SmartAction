@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 
-VERSION = "v1.1.0"
+VERSION = "v1.2.0"
 APP_NAME = "SmartAction"
 ADDON_ID = "smartaction-container-helper@naughtytiger06.local"
 HOST_NAME = "smartaction_firefox_helper"

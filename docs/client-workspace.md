@@ -1,31 +1,35 @@
 # Client Workspace / 客戶工作區
 
-Client Workspace 用來管理不同客戶的維運網址。你可以為每個客戶建立一組 URL，從輪盤或 Client Workspace 視窗一次開啟。
+Client Workspace 用來管理不同客戶的維運網址。每個客戶可以保存 Firefox Profile、Container 名稱與多個網址，並從輪盤一次開啟完整工作區。
 
-## 資料欄位
+## 資料夾與排序
 
-每個客戶包含：
+- 按 `New Folder` 建立分類，例如依工程師、區域或專案分類。
+- 客戶可以直接拖曳到其他資料夾。
+- 同一資料夾內可上下拖曳調整客戶順序，變更會立即寫入 JSON。
+- 新增或編輯客戶時，也可以從 `Folder` 欄位指定分類。
+- 刪除資料夾不會刪除客戶；其中的客戶會移到 `Unassigned`。
 
-- id
-- name
-- containerName
-- firefoxProfile
-- urls
+舊版 1.0 資料會自動相容，原有客戶會先顯示在 `Unassigned`。
 
-每個 URL 包含：
+## 資料格式
 
-- name
-- url
-
-範例：
+Client Workspace 1.1 使用 `folders` 保存分類順序，客戶以 `folderId` 指向所屬資料夾：
 
 ```json
 {
-  "version": "1.0",
+  "version": "1.1",
+  "folders": [
+    {
+      "id": "engineer-a",
+      "name": "工程師 A"
+    }
+  ],
   "clients": [
     {
       "id": "abc-company",
       "name": "ABC 客戶",
+      "folderId": "engineer-a",
       "containerName": "ABC-Maintenance",
       "firefoxProfile": "SmartAction-ClientWorkspace",
       "urls": [
@@ -39,67 +43,31 @@ Client Workspace 用來管理不同客戶的維運網址。你可以為每個客
 }
 ```
 
-## 一般 Firefox 分頁
+## Firefox 與 Container
 
-如果 `containerName` 是空白，SmartAction 會使用一般 Firefox 分頁開啟客戶所有 URL。
+未設定 `containerName` 時，SmartAction 會使用指定的 Firefox Profile 開啟客戶網址。設定 Container 後，則透過 Container Helper Extension 在指定的 Firefox Container 內開啟。
 
-## Firefox Container
+詳細設定請參考 `docs/firefox-container-helper.md`。
 
-如果 `containerName` 有值，SmartAction 會使用 Container Helper Extension，嘗試在指定 Container 中開啟 URL。
+## 匯入、匯出與備份
 
-Container 名稱必須和 Firefox 裡建立的 Container 完全一致。
-
-## 輪盤 Action Type
-
-在 Settings 新增 Action 時，Type 選擇：
-
-```text
-Client Workspace
-```
-
-儲存後，輪盤點擊該 Action 會進入或啟動 Client Workspace 流程。
-
-## 匯入 / 匯出
-
-Client Workspace 支援 JSON 匯入與匯出。匯入前會備份目前的設定檔：
+Client Workspace 支援 JSON 匯入與匯出，主要資料位於：
 
 ```text
 data/client_workspaces.json
 ```
 
-備份檔案格式：
+匯入會先建立備份：
 
 ```text
 client_workspaces.backup.YYYYMMDD-HHMMSS.json
 ```
 
+匯入 1.0 或 1.1 格式皆可；匯出一律使用 1.1 格式。
+
 ## 常見問題
 
-### 沒有 URL
-
-如果客戶沒有任何 URL，SmartAction 會提示並停止啟動。
-
-### URL 格式不完整
-
-建議 URL 使用：
-
-```text
-https://example.com
-```
-
-如果缺少 `http://` 或 `https://`，SmartAction 會提示你確認格式。
-
-### 找不到 Firefox
-
-請確認 Firefox 已安裝，或 `firefox.exe` 已加入 PATH。
-
-### Container 無法開啟
-
-請確認 Container Helper Extension、Native Messaging Host 與 Firefox Container 都已設定完成。
-
-更多細節請看：
-
-```text
-docs/firefox-container-helper.md
-```
-
+- 客戶沒有網址：`Launch Workspace` 會保持停用。
+- 網址無法開啟：確認網址以 `http://` 或 `https://` 開頭。
+- Firefox 找不到：確認 Firefox 已安裝，或 `firefox.exe` 已加入 PATH。
+- Container 無法使用：在 Client Workspace 執行 `Check Helper` 或 `Repair Setup`。
