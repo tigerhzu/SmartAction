@@ -10,12 +10,17 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import QMouseEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
 from core.actions.settings_action import SettingsAction
 from core.actions_config import ActionsConfig
+from core.client_workspace import (
+    WORKSPACE_VERSION,
+    ClientWorkspaceStore,
+    validate_workspace_data,
+)
 from core.constellation import (
     CONSTELLATIONS,
     CONSTELLATION_ORDER,
@@ -34,6 +39,7 @@ from tools.build_emoji_database import parse_emoji_test
 from ui.emoji_picker import CATALOG
 from ui.ring_ui import RingWindow, WINDOW_SIZE
 from ui.theme_painter import preload_theme_assets, prune_theme_asset_cache
+from ui.window_utils import center_window, screen_for_widget
 
 
 class HotkeyRegressionTests(unittest.TestCase):
@@ -176,6 +182,98 @@ class ConstellationAndSettingsActionTests(unittest.TestCase):
             self.assertEqual(config.get_constellation(), "sagittarius")
             self.assertEqual(config.get_constellation_color(), "#22CCFF")
             window.close()
+
+
+class ClientWorkspaceOrganisationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _client(name: str, folder_id: str = "") -> dict:
+        return {
+            "name": name,
+            "folderId": folder_id,
+            "containerName": "",
+            "firefoxProfile": "",
+            "urls": [],
+        }
+
+    def test_v1_workspace_migrates_clients_to_unassigned(self) -> None:
+        clean = validate_workspace_data(
+            {
+                "version": "1.0",
+                "clients": [self._client("Legacy Client")],
+            }
+        )
+
+        self.assertEqual(clean["version"], WORKSPACE_VERSION)
+        self.assertEqual(clean["folders"], [])
+        self.assertEqual(clean["clients"][0]["folderId"], "")
+
+    def test_folders_and_drag_layout_are_persisted(self) -> None:
+        from ui.client_workspace_window import ClientWorkspaceWindow
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ClientWorkspaceStore(Path(temp_dir) / "client-workspaces.json")
+            first_folder = store.add_folder("Engineer A")
+            second_folder = store.add_folder("Engineer B")
+            first_client = store.add_client(self._client("Client One", first_folder["id"]))
+            second_client = store.add_client(self._client("Client Two", second_folder["id"]))
+            window = ClientWorkspaceWindow(store=store)
+
+            first_item = window._client_tree.topLevelItem(1)
+            second_item = window._client_tree.topLevelItem(2)
+            moved_client = first_item.takeChild(0)
+            second_item.insertChild(0, moved_client)
+            reordered_client = second_item.takeChild(1)
+            second_item.insertChild(0, reordered_client)
+            window._save_client_tree_layout()
+
+            clients = store.clients()
+            self.assertEqual(
+                [client["id"] for client in clients],
+                [second_client["id"], first_client["id"]],
+            )
+            self.assertEqual(
+                [client["folderId"] for client in clients],
+                [second_folder["id"], second_folder["id"]],
+            )
+
+            store.delete_folder(second_folder["id"])
+            self.assertTrue(all(not client["folderId"] for client in store.clients()))
+            window.close()
+
+
+class _FakeScreen:
+    def __init__(self, geometry: QRect):
+        self._geometry = geometry
+
+    def availableGeometry(self) -> QRect:
+        return self._geometry
+
+
+class MultiMonitorWindowRegressionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_unshown_top_level_window_uses_cursor_screen(self) -> None:
+        window = QWidget()
+        secondary = _FakeScreen(QRect(-1920, 40, 1600, 900))
+        with patch("ui.window_utils.screen_at_cursor", return_value=secondary):
+            self.assertIs(screen_for_widget(window), secondary)
+        window.close()
+
+    def test_window_centres_in_negative_coordinate_monitor_geometry(self) -> None:
+        window = QWidget()
+        window.resize(800, 600)
+        secondary = _FakeScreen(QRect(-1920, 40, 1600, 900))
+
+        center_window(window, secondary)
+
+        self.assertEqual(window.pos(), QPoint(-1520, 190))
+        window.close()
 
 
 class RingRotationRegressionTests(unittest.TestCase):

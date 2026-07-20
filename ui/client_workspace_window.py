@@ -4,22 +4,24 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -182,6 +184,19 @@ _SCROLLBARS = f"""
     }}
 """
 
+_TREE_KIND_ROLE = Qt.ItemDataRole.UserRole
+_TREE_ID_ROLE = Qt.ItemDataRole.UserRole + 1
+_TREE_FOLDER = "folder"
+_TREE_CLIENT = "client"
+
+
+class _ClientTreeWidget(QTreeWidget):
+    layout_changed = Signal()
+
+    def dropEvent(self, event) -> None:
+        super().dropEvent(event)
+        self.layout_changed.emit()
+
 
 def _caption(text: str) -> QLabel:
     label = QLabel(text)
@@ -292,9 +307,18 @@ def show_helper_setup_message(parent: QWidget, text: str) -> None:
 
 
 class _ClientDialog(QDialog):
-    def __init__(self, client: dict[str, Any] | None = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        client: dict[str, Any] | None = None,
+        parent: QWidget | None = None,
+        *,
+        folders: list[dict[str, str]] | None = None,
+        default_folder_id: str = "",
+    ) -> None:
         super().__init__(parent)
         self._client = client or {}
+        self._folders = folders or []
+        self._default_folder_id = default_folder_id
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -309,10 +333,19 @@ class _ClientDialog(QDialog):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._name = QLineEdit(self._client.get("name", ""))
         self._container = QLineEdit(self._client.get("containerName", ""))
+        self._folder = QComboBox()
+        self._folder.setStyleSheet(_COMBO)
+        self._folder.addItem("Unassigned", "")
+        for folder in self._folders:
+            self._folder.addItem(folder.get("name", "Untitled Folder"), folder.get("id", ""))
+        folder_id = self._client.get("folderId", self._default_folder_id)
+        folder_index = self._folder.findData(folder_id)
+        self._folder.setCurrentIndex(max(0, folder_index))
         self._profile = QComboBox()
         self._profile.setStyleSheet(_COMBO)
         self._container.setPlaceholderText("Reserved for future Firefox Container integration")
         form.addRow(_caption("NAME"), self._name)
+        form.addRow(_caption("FOLDER"), self._folder)
         form.addRow(_caption("CONTAINER"), self._container)
         form.addRow(_caption("FIREFOX PROFILE"), self._make_profile_picker())
         root.addLayout(form)
@@ -340,6 +373,7 @@ class _ClientDialog(QDialog):
         return {
             **self._client,
             "name": self._name.text().strip(),
+            "folderId": str(self._folder.currentData() or "").strip(),
             "containerName": self._container.text().strip(),
             "firefoxProfile": str(self._profile.currentData() or "").strip(),
             "urls": self._client.get("urls", []),
@@ -451,9 +485,14 @@ class _UrlDialog(QDialog):
 
 
 class ClientWorkspaceWindow(QDialog):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        store: ClientWorkspaceStore | None = None,
+    ) -> None:
         super().__init__(parent)
-        self._store = ClientWorkspaceStore()
+        self._store = store or ClientWorkspaceStore()
         self._selected_id: str | None = None
         self._helper_connected: bool | None = None
         self._build_ui()
@@ -476,25 +515,54 @@ class ClientWorkspaceWindow(QDialog):
         body.setSpacing(14)
         left = QVBoxLayout()
         left.addWidget(_caption("CLIENTS"))
-        self._client_list = QListWidget()
-        self._client_list.setMinimumWidth(260)
-        self._client_list.currentRowChanged.connect(self._on_client_selected)
-        self._client_list.setStyleSheet(f"""
-            QListWidget {{
+        self._client_tree = _ClientTreeWidget()
+        self._client_tree.setHeaderHidden(True)
+        self._client_tree.setMinimumWidth(300)
+        self._client_tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._client_tree.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self._client_tree.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._client_tree.setDragDropOverwriteMode(False)
+        self._client_tree.setDropIndicatorShown(True)
+        self._client_tree.invisibleRootItem().setFlags(Qt.ItemFlag.ItemIsEnabled)
+        self._client_tree.currentItemChanged.connect(self._on_client_selected)
+        self._client_tree.layout_changed.connect(self._save_client_tree_layout)
+        self._client_tree.setStyleSheet(f"""
+            QTreeWidget {{
                 border: 1px solid {ASH}; border-radius: 3px;
                 background: {CHARCOAL}; color: {BONE}; padding: 4px;
                 outline: none;
             }}
-            QListWidget::item {{ padding: 8px; border-radius: 3px; }}
-            QListWidget::item:hover {{ background: {STEEL}; color: {EMBER}; }}
-            QListWidget::item:selected {{ background: {EMBER_WASH}; color: {EMBER}; }}
-            QListWidget::item:focus {{ border: 1px solid {EMBER}; }}
+            QTreeWidget::item {{ min-height: 30px; padding: 3px 5px; border-radius: 3px; }}
+            QTreeWidget::item:hover {{ background: {STEEL}; color: {EMBER}; }}
+            QTreeWidget::item:selected {{ background: {EMBER_WASH}; color: {EMBER}; }}
+            QTreeWidget::item:focus {{ border: 1px solid {EMBER}; }}
         """)
-        left.addWidget(self._client_list, stretch=1)
+        left.addWidget(self._client_tree, stretch=1)
 
-        self._no_clients_hint = QLabel("尚未建立客戶")
+        self._no_clients_hint = QLabel("No clients yet. Add a client to get started.")
         self._no_clients_hint.setStyleSheet(f"color: {FOG}; font-size: 12px;")
         left.addWidget(self._no_clients_hint)
+
+        drag_hint = QLabel("Drag clients to reorder them or move them into another folder.")
+        drag_hint.setWordWrap(True)
+        drag_hint.setStyleSheet(f"color: {FOG}; font-size: 11px;")
+        left.addWidget(drag_hint)
+
+        folder_buttons = QHBoxLayout()
+        add_folder = QPushButton("New Folder")
+        add_folder.setStyleSheet(_BTN_SECONDARY)
+        add_folder.clicked.connect(self._add_folder)
+        rename_folder = QPushButton("Rename")
+        rename_folder.setStyleSheet(_BTN_SECONDARY)
+        rename_folder.clicked.connect(self._rename_folder)
+        delete_folder = QPushButton("Delete Folder")
+        delete_folder.setStyleSheet(_BTN_DANGER)
+        delete_folder.clicked.connect(self._delete_folder)
+        self._folder_buttons = (rename_folder, delete_folder)
+        folder_buttons.addWidget(add_folder)
+        folder_buttons.addWidget(rename_folder)
+        folder_buttons.addWidget(delete_folder)
+        left.addLayout(folder_buttons)
 
         client_buttons = QHBoxLayout()
         add_client = QPushButton("Add Client")
@@ -518,12 +586,14 @@ class ClientWorkspaceWindow(QDialog):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._name = QLineEdit()
         self._client_id = QLineEdit()
+        self._folder = QLineEdit()
         self._container = QLineEdit()
         self._profile = QLineEdit()
-        for field in (self._client_id, self._name, self._container, self._profile):
+        for field in (self._client_id, self._name, self._folder, self._container, self._profile):
             field.setReadOnly(True)
         form.addRow(_caption("ID"), self._client_id)
         form.addRow(_caption("NAME"), self._name)
+        form.addRow(_caption("FOLDER"), self._folder)
         form.addRow(_caption("CONTAINER"), self._container)
         form.addRow(_caption("FIREFOX PROFILE"), self._profile)
         right.addLayout(form)
@@ -636,42 +706,108 @@ class ClientWorkspaceWindow(QDialog):
 
     def _refresh_clients(self) -> None:
         current_id = self._selected_id
-        self._client_list.blockSignals(True)
-        self._client_list.clear()
+        self._client_tree.blockSignals(True)
+        self._client_tree.clear()
+        folder_items: dict[str, QTreeWidgetItem] = {}
+
+        unassigned = self._make_folder_item("", "Unassigned")
+        folder_items[""] = unassigned
+        self._client_tree.addTopLevelItem(unassigned)
+        for folder in self._store.folders():
+            folder_id = folder.get("id", "")
+            folder_item = self._make_folder_item(
+                folder_id,
+                folder.get("name", "Untitled Folder"),
+            )
+            folder_items[folder_id] = folder_item
+            self._client_tree.addTopLevelItem(folder_item)
+
+        selected_item = None
         for client in self._store.clients():
-            item = QListWidgetItem(client.get("name", "Untitled Client"))
-            item.setData(Qt.ItemDataRole.UserRole, client.get("id", ""))
-            self._client_list.addItem(item)
-        self._client_list.blockSignals(False)
-        self._no_clients_hint.setVisible(self._client_list.count() == 0)
-        row = 0
-        if current_id:
-            for idx in range(self._client_list.count()):
-                if self._client_list.item(idx).data(Qt.ItemDataRole.UserRole) == current_id:
-                    row = idx
-                    break
-        if self._client_list.count():
-            self._client_list.setCurrentRow(row)
+            item = QTreeWidgetItem([client.get("name", "Untitled Client")])
+            item.setData(0, _TREE_KIND_ROLE, _TREE_CLIENT)
+            item.setData(0, _TREE_ID_ROLE, client.get("id", ""))
+            item.setFlags(
+                Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsDragEnabled
+            )
+            folder_items.get(client.get("folderId", ""), unassigned).addChild(item)
+            if client.get("id") == current_id:
+                selected_item = item
+
+        self._client_tree.expandAll()
+        self._client_tree.blockSignals(False)
+        has_clients = bool(self._store.clients())
+        self._no_clients_hint.setVisible(not has_clients)
+        if selected_item is not None:
+            self._client_tree.setCurrentItem(selected_item)
+        elif has_clients:
+            first_client = self._first_client_item()
+            self._client_tree.setCurrentItem(first_client)
         else:
             self._selected_id = None
             self._load_client(None)
+        self._update_buttons()
+
+    @staticmethod
+    def _make_folder_item(folder_id: str, name: str) -> QTreeWidgetItem:
+        item = QTreeWidgetItem([name])
+        item.setData(0, _TREE_KIND_ROLE, _TREE_FOLDER)
+        item.setData(0, _TREE_ID_ROLE, folder_id)
+        item.setFlags(
+            Qt.ItemFlag.ItemIsEnabled
+            | Qt.ItemFlag.ItemIsSelectable
+            | Qt.ItemFlag.ItemIsDropEnabled
+        )
+        return item
+
+    def _first_client_item(self) -> QTreeWidgetItem | None:
+        for index in range(self._client_tree.topLevelItemCount()):
+            folder_item = self._client_tree.topLevelItem(index)
+            if folder_item.childCount():
+                return folder_item.child(0)
+        return None
 
     def _current_client(self) -> dict[str, Any] | None:
         return self._store.get(self._selected_id) if self._selected_id else None
 
-    def _on_client_selected(self, row: int) -> None:
-        if row < 0:
+    def _on_client_selected(
+        self,
+        current: QTreeWidgetItem | None,
+        _previous: QTreeWidgetItem | None,
+    ) -> None:
+        if current is None or current.data(0, _TREE_KIND_ROLE) != _TREE_CLIENT:
             self._selected_id = None
             self._helper_connected = None
             self._load_client(None)
             return
-        self._selected_id = self._client_list.item(row).data(Qt.ItemDataRole.UserRole)
+        self._selected_id = str(current.data(0, _TREE_ID_ROLE) or "")
         self._helper_connected = None
         self._load_client(self._current_client())
+
+    def _selected_folder_id(self) -> str:
+        item = self._client_tree.currentItem()
+        if item is None:
+            return ""
+        if item.data(0, _TREE_KIND_ROLE) == _TREE_CLIENT:
+            item = item.parent()
+        if item is None or item.data(0, _TREE_KIND_ROLE) != _TREE_FOLDER:
+            return ""
+        return str(item.data(0, _TREE_ID_ROLE) or "")
+
+    def _folder_name(self, folder_id: str) -> str:
+        if not folder_id:
+            return "Unassigned"
+        for folder in self._store.folders():
+            if folder.get("id") == folder_id:
+                return folder.get("name", "Untitled Folder")
+        return "Unassigned"
 
     def _load_client(self, client: dict[str, Any] | None) -> None:
         self._client_id.setText(client.get("id", "") if client else "")
         self._name.setText(client.get("name", "") if client else "")
+        self._folder.setText(self._folder_name(client.get("folderId", "")) if client else "")
         self._container.setText(client.get("containerName", "") if client else "")
         self._profile.setText(client.get("firefoxProfile", "") if client else "")
         self._url_table.setRowCount(0)
@@ -748,12 +884,118 @@ class ClientWorkspaceWindow(QDialog):
     def _update_buttons(self) -> None:
         has_client = self._current_client() is not None
         has_url = self._url_table.currentRow() >= 0
+        current_item = self._client_tree.currentItem()
+        has_real_folder = bool(
+            current_item is not None
+            and current_item.data(0, _TREE_KIND_ROLE) == _TREE_FOLDER
+            and current_item.data(0, _TREE_ID_ROLE)
+        )
         for button in self._client_buttons:
             button.setEnabled(has_client)
+        for button in self._folder_buttons:
+            button.setEnabled(has_real_folder)
         self._url_buttons[0].setEnabled(has_client)
         self._url_buttons[1].setEnabled(has_client and has_url)
         self._url_buttons[2].setEnabled(has_client and has_url)
         self._launch.setEnabled(bool(has_client and self._current_client().get("urls")))
+
+    def _save_client_tree_layout(self) -> None:
+        unassigned = None
+        loose_clients: list[QTreeWidgetItem] = []
+        index = 0
+        while index < self._client_tree.topLevelItemCount():
+            item = self._client_tree.topLevelItem(index)
+            if item.data(0, _TREE_KIND_ROLE) == _TREE_CLIENT:
+                loose_clients.append(self._client_tree.takeTopLevelItem(index))
+                continue
+            if not item.data(0, _TREE_ID_ROLE):
+                unassigned = item
+            index += 1
+        if unassigned is not None:
+            for item in loose_clients:
+                unassigned.addChild(item)
+
+        layout: list[tuple[str, str]] = []
+        for folder_index in range(self._client_tree.topLevelItemCount()):
+            folder_item = self._client_tree.topLevelItem(folder_index)
+            if folder_item.data(0, _TREE_KIND_ROLE) != _TREE_FOLDER:
+                continue
+            folder_id = str(folder_item.data(0, _TREE_ID_ROLE) or "")
+            for client_index in range(folder_item.childCount()):
+                client_item = folder_item.child(client_index)
+                if client_item.data(0, _TREE_KIND_ROLE) == _TREE_CLIENT:
+                    layout.append(
+                        (str(client_item.data(0, _TREE_ID_ROLE) or ""), folder_id)
+                    )
+        try:
+            self._store.set_client_layout(layout)
+        except ClientWorkspaceError as exc:
+            show_warning_message(self, "Client Order", str(exc))
+        self._refresh_clients()
+
+    def _select_folder(self, folder_id: str) -> None:
+        for index in range(self._client_tree.topLevelItemCount()):
+            item = self._client_tree.topLevelItem(index)
+            if str(item.data(0, _TREE_ID_ROLE) or "") == folder_id:
+                self._client_tree.setCurrentItem(item)
+                return
+
+    def _add_folder(self) -> None:
+        name, accepted = QInputDialog.getText(self, "New Folder", "Folder name:")
+        if not accepted:
+            return
+        try:
+            folder = self._store.add_folder(name)
+        except ClientWorkspaceError as exc:
+            show_warning_message(self, "Folder", str(exc))
+            return
+        self._refresh_clients()
+        self._select_folder(folder["id"])
+
+    def _rename_folder(self) -> None:
+        folder_id = self._selected_folder_id()
+        if not folder_id:
+            return
+        current_name = self._folder_name(folder_id)
+        name, accepted = QInputDialog.getText(
+            self,
+            "Rename Folder",
+            "Folder name:",
+            text=current_name,
+        )
+        if not accepted:
+            return
+        try:
+            self._store.rename_folder(folder_id, name)
+        except ClientWorkspaceError as exc:
+            show_warning_message(self, "Folder", str(exc))
+            return
+        self._refresh_clients()
+        self._select_folder(folder_id)
+
+    def _delete_folder(self) -> None:
+        folder_id = self._selected_folder_id()
+        if not folder_id:
+            return
+        folder_name = self._folder_name(folder_id)
+        client_count = sum(
+            client.get("folderId") == folder_id for client in self._store.clients()
+        )
+        reply = show_confirm_message(
+            self,
+            "Delete Folder",
+            f'Delete folder "{folder_name}"?\n\n'
+            f"Its {client_count} client(s) will be moved to Unassigned.",
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._store.delete_folder(folder_id)
+        except ClientWorkspaceError as exc:
+            show_warning_message(self, "Folder", str(exc))
+            return
+        self._refresh_clients()
+        self._select_folder("")
 
     def _name_exists(self, name: str, ignore_id: str | None = None) -> bool:
         folded = name.strip().casefold()
@@ -765,7 +1007,11 @@ class ClientWorkspaceWindow(QDialog):
         return False
 
     def _add_client(self) -> None:
-        dlg = _ClientDialog(parent=self)
+        dlg = _ClientDialog(
+            parent=self,
+            folders=self._store.folders(),
+            default_folder_id=self._selected_folder_id(),
+        )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         data = dlg.data()
@@ -784,7 +1030,7 @@ class ClientWorkspaceWindow(QDialog):
         client = self._current_client()
         if not client:
             return
-        dlg = _ClientDialog(client, self)
+        dlg = _ClientDialog(client, self, folders=self._store.folders())
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         data = dlg.data()

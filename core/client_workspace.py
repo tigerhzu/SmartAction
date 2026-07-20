@@ -20,6 +20,7 @@ from core.paths import DATA_DIR
 
 
 WORKSPACE_PATH = DATA_DIR / "client_workspaces.json"
+WORKSPACE_VERSION = "1.1"
 SMARTACTION_LOCAL_DIR = Path(os.environ.get("LOCALAPPDATA", str(DATA_DIR))) / "SmartAction"
 FIREFOX_HELPER_DIR = SMARTACTION_LOCAL_DIR / "firefox_helper"
 PENDING_LAUNCH_PATH = FIREFOX_HELPER_DIR / "pending_launch.json"
@@ -37,7 +38,8 @@ FIREFOX_PROFILES_INI = (
 )
 
 DEFAULT_WORKSPACES: dict[str, Any] = {
-    "version": "1.0",
+    "version": WORKSPACE_VERSION,
+    "folders": [],
     "clients": [],
 }
 
@@ -167,6 +169,14 @@ def normalise_url(data: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def normalise_folder(data: dict[str, Any]) -> dict[str, str]:
+    name = str(data.get("name", "")).strip() or "Untitled Folder"
+    return {
+        "id": str(data.get("id", "")).strip() or _new_id(name),
+        "name": name,
+    }
+
+
 def normalise_client(data: dict[str, Any]) -> dict[str, Any]:
     name = str(data.get("name", "")).strip() or "Untitled Client"
     urls = data.get("urls", [])
@@ -175,6 +185,7 @@ def normalise_client(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(data.get("id", "")).strip() or _new_id(name),
         "name": name,
+        "folderId": str(data.get("folderId", "")).strip(),
         "containerName": str(data.get("containerName", "")).strip(),
         "firefoxProfile": str(data.get("firefoxProfile", "")).strip(),
         "urls": [normalise_url(u) for u in urls if isinstance(u, dict)],
@@ -184,8 +195,28 @@ def normalise_client(data: dict[str, Any]) -> dict[str, Any]:
 def validate_workspace_data(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ClientWorkspaceError("Workspace JSON must be an object.")
-    if str(data.get("version", "")) != "1.0":
+    if str(data.get("version", "")) not in {"1.0", WORKSPACE_VERSION}:
         raise ClientWorkspaceError("Unsupported Client Workspace version.")
+    folders = data.get("folders", [])
+    if not isinstance(folders, list):
+        raise ClientWorkspaceError("Workspace JSON folders must be an array.")
+    clean_folders: list[dict[str, str]] = []
+    folder_ids: set[str] = set()
+    folder_names: set[str] = set()
+    for idx, folder in enumerate(folders, start=1):
+        if not isinstance(folder, dict):
+            raise ClientWorkspaceError(f"Folder #{idx} must be an object.")
+        if not str(folder.get("name", "")).strip():
+            raise ClientWorkspaceError(f"Folder #{idx} name is required.")
+        clean_folder = normalise_folder(folder)
+        folded_name = clean_folder["name"].casefold()
+        if clean_folder["id"] in folder_ids:
+            raise ClientWorkspaceError(f'Folder id "{clean_folder["id"]}" is duplicated.')
+        if folded_name in folder_names:
+            raise ClientWorkspaceError(f'Folder name "{clean_folder["name"]}" is duplicated.')
+        folder_ids.add(clean_folder["id"])
+        folder_names.add(folded_name)
+        clean_folders.append(clean_folder)
     clients = data.get("clients")
     if not isinstance(clients, list):
         raise ClientWorkspaceError("Workspace JSON must contain a clients array.")
@@ -204,9 +235,14 @@ def validate_workspace_data(data: dict[str, Any]) -> dict[str, Any]:
                 raise ClientWorkspaceError(f"Client #{idx} URL #{url_idx} name is required.")
             if not str(url_data.get("url", "")).strip():
                 raise ClientWorkspaceError(f"Client #{idx} URL #{url_idx} url is required.")
+    clean_clients = [normalise_client(c) for c in clients if isinstance(c, dict)]
+    for client in clean_clients:
+        if client["folderId"] not in folder_ids:
+            client["folderId"] = ""
     return {
-        "version": "1.0",
-        "clients": [normalise_client(c) for c in clients if isinstance(c, dict)],
+        "version": WORKSPACE_VERSION,
+        "folders": clean_folders,
+        "clients": clean_clients,
     }
 
 
@@ -236,6 +272,9 @@ class ClientWorkspaceStore:
 
     def clients(self) -> list[dict[str, Any]]:
         return deepcopy(self._data.get("clients", []))
+
+    def folders(self) -> list[dict[str, str]]:
+        return deepcopy(self._data.get("folders", []))
 
     def get(self, client_id: str) -> dict[str, Any] | None:
         for client in self.clients():
@@ -275,6 +314,58 @@ class ClientWorkspaceStore:
         self._data["clients"] = [c for c in clients if c.get("id") != client_id]
         self.save_data(self._data)
 
+    def add_folder(self, name: str) -> dict[str, str]:
+        clean_name = str(name).strip()
+        if not clean_name:
+            raise ClientWorkspaceError("Folder name is required.")
+        self._ensure_unique_folder_name(clean_name)
+        folder = normalise_folder({"name": clean_name})
+        existing_ids = {folder.get("id") for folder in self._data.setdefault("folders", [])}
+        if folder["id"] in existing_ids:
+            folder["id"] = f"folder-{uuid.uuid4().hex[:8]}"
+        self._data["folders"].append(folder)
+        self.save_data(self._data)
+        return deepcopy(folder)
+
+    def rename_folder(self, folder_id: str, name: str) -> dict[str, str]:
+        clean_name = str(name).strip()
+        if not clean_name:
+            raise ClientWorkspaceError("Folder name is required.")
+        self._ensure_unique_folder_name(clean_name, ignore_id=folder_id)
+        for folder in self._data.setdefault("folders", []):
+            if folder.get("id") == folder_id:
+                folder["name"] = clean_name
+                self.save_data(self._data)
+                return deepcopy(folder)
+        raise ClientWorkspaceError("Folder was not found.")
+
+    def delete_folder(self, folder_id: str) -> None:
+        folders = self._data.setdefault("folders", [])
+        if not any(folder.get("id") == folder_id for folder in folders):
+            raise ClientWorkspaceError("Folder was not found.")
+        self._data["folders"] = [folder for folder in folders if folder.get("id") != folder_id]
+        for client in self._data.setdefault("clients", []):
+            if client.get("folderId") == folder_id:
+                client["folderId"] = ""
+        self.save_data(self._data)
+
+    def set_client_layout(self, layout: list[tuple[str, str]]) -> None:
+        clients = self._data.setdefault("clients", [])
+        clients_by_id = {str(client.get("id", "")): client for client in clients}
+        layout_ids = [str(client_id) for client_id, _folder_id in layout]
+        if len(layout_ids) != len(clients) or set(layout_ids) != set(clients_by_id):
+            raise ClientWorkspaceError("Client layout must contain every client exactly once.")
+        if len(layout_ids) != len(set(layout_ids)):
+            raise ClientWorkspaceError("Client layout contains a duplicate client.")
+        folder_ids = {str(folder.get("id", "")) for folder in self._data.get("folders", [])}
+        reordered: list[dict[str, Any]] = []
+        for client_id, folder_id in layout:
+            client = clients_by_id[str(client_id)]
+            client["folderId"] = str(folder_id) if str(folder_id) in folder_ids else ""
+            reordered.append(client)
+        self._data["clients"] = reordered
+        self.save_data(self._data)
+
     def export_json(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
@@ -306,6 +397,14 @@ class ClientWorkspaceStore:
                 continue
             if str(client.get("name", "")).strip().casefold() == folded:
                 raise ClientWorkspaceError(f'Client name "{name}" already exists.')
+
+    def _ensure_unique_folder_name(self, name: str, ignore_id: str | None = None) -> None:
+        folded = name.strip().casefold()
+        for folder in self._data.get("folders", []):
+            if ignore_id and folder.get("id") == ignore_id:
+                continue
+            if str(folder.get("name", "")).strip().casefold() == folded:
+                raise ClientWorkspaceError(f'Folder name "{name}" already exists.')
 
 
 def launch_client_workspace(client: dict[str, Any]) -> LaunchResult:
