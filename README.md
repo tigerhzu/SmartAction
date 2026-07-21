@@ -26,14 +26,11 @@ SmartAction-Release-v1.2.0.zip
 ## 主要功能
 
 - 使用 Windows 原生全域 Hotkey，長時間在背景執行仍能穩定叫出輪盤。
-- 輪盤出現在滑鼠位置，點擊執行動作；按住動作拖曳即可順時針或逆時針旋轉。
 - 12 種星座背景，可自訂星座連線與星星顏色。
 - 可從輪盤直接開啟 Settings，不必回到右下角系統匣。
 - 支援 URL、程式、檔案、Command、PowerShell、文字貼上、表單及子選單。
 - 內建 PowerShell Library、Environment Check 與 Client Workspace。
-- Emoji 圖庫移除重複膚色版本，降低載入時間與記憶體使用量。
 - 設定檔支援匯入、匯出與舊版自動升級。
-- 針對較慢電腦縮小動畫資源並延遲載入未使用主題。
 
 ## 快速開始
 
