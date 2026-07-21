@@ -22,6 +22,7 @@ SmartAction-Release-v1.2.0.zip
 ```
 
 請不要使用 GitHub 的 `Code > Download ZIP` 安裝程式；那是原始碼，不是已封裝的 Windows 版本。
+Environment Check 功能要跑比較久，並不是卡死。
 
 ## 主要功能
 
