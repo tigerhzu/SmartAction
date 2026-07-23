@@ -51,6 +51,12 @@ def build_profile(
     theme_override: str | None = None,
     constellation_override: str | None = None,
     constellation_color_override: str | None = None,
+    ui_theme_override: str | None = None,
+    ui_background_override: str | None = None,
+    ui_background_opacity_override: int | None = None,
+    ui_background_zoom_override: int | None = None,
+    ui_background_focus_x_override: float | None = None,
+    ui_background_focus_y_override: float | None = None,
 ) -> dict[str, Any]:
     settings = _read_json(ConfigManager().path, {})
     library = PowerShellLibrary()
@@ -68,6 +74,37 @@ def build_profile(
         if constellation_color_override is not None
         else actions_config.get_constellation_color()
     )
+    ui_theme = (
+        ui_theme_override
+        if ui_theme_override is not None
+        else actions_config.get_ui_theme()
+    )
+    ui_background = (
+        ui_background_override
+        if ui_background_override is not None
+        else actions_config.get_ui_background()
+    )
+    ui_background_opacity = (
+        ui_background_opacity_override
+        if ui_background_opacity_override is not None
+        else actions_config.get_ui_background_opacity()
+    )
+    ui_background_zoom = (
+        ui_background_zoom_override
+        if ui_background_zoom_override is not None
+        else actions_config.get_ui_background_zoom()
+    )
+    current_focus_x, current_focus_y = actions_config.get_ui_background_focus()
+    ui_background_focus_x = (
+        ui_background_focus_x_override
+        if ui_background_focus_x_override is not None
+        else current_focus_x
+    )
+    ui_background_focus_y = (
+        ui_background_focus_y_override
+        if ui_background_focus_y_override is not None
+        else current_focus_y
+    )
 
     return {
         "profile_version": PROFILE_VERSION,
@@ -75,11 +112,17 @@ def build_profile(
         "exported_at": datetime.now().isoformat(timespec="seconds"),
         "settings": _sanitize(settings),
         "actions_config": {
-            "version": "1.0",
+            "version": "1.3",
             "hotkey": hotkey,
             "theme": theme,
             "constellation": constellation,
             "constellation_color": constellation_color,
+            "ui_theme": ui_theme,
+            "ui_background": ui_background,
+            "ui_background_opacity": ui_background_opacity,
+            "ui_background_zoom": ui_background_zoom,
+            "ui_background_focus_x": ui_background_focus_x,
+            "ui_background_focus_y": ui_background_focus_y,
         },
         "actions": _sanitize(actions),
         "powershell_library": _sanitize(library.scripts()),
@@ -89,6 +132,12 @@ def build_profile(
                 "theme": theme,
                 "constellation": constellation,
                 "constellation_color": constellation_color,
+                "global_theme": ui_theme,
+                "background": ui_background,
+                "background_opacity": ui_background_opacity,
+                "background_zoom": ui_background_zoom,
+                "background_focus_x": ui_background_focus_x,
+                "background_focus_y": ui_background_focus_y,
                 "startup_video_enabled": settings.get("startup_video_enabled", False),
                 "startup_video_duration": settings.get("startup_video_duration", 5),
                 "startup_video_path": settings.get("startup_video_path", "assets/startup/startup.png"),
@@ -105,6 +154,12 @@ def export_profile(
     theme_override: str | None = None,
     constellation_override: str | None = None,
     constellation_color_override: str | None = None,
+    ui_theme_override: str | None = None,
+    ui_background_override: str | None = None,
+    ui_background_opacity_override: int | None = None,
+    ui_background_zoom_override: int | None = None,
+    ui_background_focus_x_override: float | None = None,
+    ui_background_focus_y_override: float | None = None,
 ) -> None:
     profile = build_profile(
         actions_config,
@@ -113,6 +168,12 @@ def export_profile(
         theme_override,
         constellation_override,
         constellation_color_override,
+        ui_theme_override,
+        ui_background_override,
+        ui_background_opacity_override,
+        ui_background_zoom_override,
+        ui_background_focus_x_override,
+        ui_background_focus_y_override,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_json(path, profile)
@@ -168,6 +229,50 @@ def _import_replace(profile: dict[str, Any], actions_config: ActionsConfig) -> N
                 "constellation_color",
                 DEFAULT_CONSTELLATION_COLOR,
             )
+        ),
+        "ui_theme": str(
+            config_meta.get("ui_theme")
+            or profile.get("ui", {}).get("global_theme", "classic")
+        ),
+        "ui_background": str(
+            config_meta.get("ui_background")
+            or profile.get("ui", {}).get("background", "")
+        ),
+        "ui_background_opacity": int(
+            config_meta.get("ui_background_opacity")
+            or profile.get("ui", {}).get("background_opacity", 82)
+        ),
+        "ui_background_zoom": max(
+            100,
+            min(
+                400,
+                int(
+                    config_meta.get("ui_background_zoom")
+                    or profile.get("ui", {}).get("background_zoom", 100)
+                ),
+            ),
+        ),
+        "ui_background_focus_x": max(
+            0.0,
+            min(
+                1.0,
+                float(
+                    config_meta.get("ui_background_focus_x")
+                    if config_meta.get("ui_background_focus_x") is not None
+                    else profile.get("ui", {}).get("background_focus_x", 0.5)
+                ),
+            ),
+        ),
+        "ui_background_focus_y": max(
+            0.0,
+            min(
+                1.0,
+                float(
+                    config_meta.get("ui_background_focus_y")
+                    if config_meta.get("ui_background_focus_y") is not None
+                    else profile.get("ui", {}).get("background_focus_y", 0.5)
+                ),
+            ),
         ),
         "actions": actions,
     }

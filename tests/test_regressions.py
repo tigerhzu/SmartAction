@@ -10,12 +10,24 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
-from PySide6.QtGui import QMouseEvent
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QImage, QMouseEvent, QPainter
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QWidget,
+)
 
 from core.actions.settings_action import SettingsAction
-from core.actions_config import ActionsConfig
+from core.actions_config import (
+    ActionsConfig,
+    UI_THEME_CLASSIC,
+    UI_THEME_CUTE,
+    UI_THEME_WOVEN,
+)
 from core.client_workspace import (
     WORKSPACE_VERSION,
     ClientWorkspaceStore,
@@ -29,6 +41,8 @@ from core.constellation import (
     normalise_constellation_color,
 )
 from core.menu_model import MenuItem
+from core.paths import ASSETS_DIR
+from core.theme import THEME_ORDER, THEMES
 from platforms.windows import (
     MOD_CONTROL,
     MOD_NOREPEAT,
@@ -38,7 +52,14 @@ from platforms.windows import (
 from tools.build_emoji_database import parse_emoji_test
 from ui.emoji_picker import CATALOG
 from ui.ring_ui import RingWindow, WINDOW_SIZE
-from ui.theme_painter import preload_theme_assets, prune_theme_asset_cache
+from ui.theme_painter import (
+    draw_energy_bubble,
+    draw_jelly_button,
+    draw_theme_orbit,
+    preload_theme_assets,
+    prune_theme_asset_cache,
+    theme_frame_count,
+)
 from ui.window_utils import center_window, screen_for_widget
 
 
@@ -173,15 +194,409 @@ class ConstellationAndSettingsActionTests(unittest.TestCase):
             config = ActionsConfig(Path(temp_dir) / "actions.json")
             window = SettingsWindow(config)
             index = window._constellation_combo.findData("sagittarius")
+            ui_index = window._ui_theme_combo.findData(UI_THEME_CUTE)
+            woven_index = window._ui_theme_combo.findData(UI_THEME_WOVEN)
             self.assertGreaterEqual(index, 0)
+            self.assertGreaterEqual(ui_index, 0)
+            self.assertGreaterEqual(woven_index, 0)
             self.assertGreaterEqual(window._combo_type.findText("Settings"), 0)
+            self.assertEqual(set(window._theme_btns), set(THEME_ORDER))
             window._constellation_combo.setCurrentIndex(index)
+            window._select_theme("halloween")
             window._pending_constellation_color = "#22CCFF"
+            window._ui_theme_combo.setCurrentIndex(ui_index)
+            window._ui_opacity_slider.setValue(68)
             with patch("ui.settings_window._autostart.set_enabled"):
                 window._on_save()
             self.assertEqual(config.get_constellation(), "sagittarius")
+            self.assertEqual(config.get_theme(), "halloween")
             self.assertEqual(config.get_constellation_color(), "#22CCFF")
+            self.assertEqual(config.get_ui_theme(), UI_THEME_CUTE)
+            self.assertEqual(config.get_ui_background_opacity(), 68)
             window.close()
+
+
+class GlobalUiThemeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_settings_interface_selector_previews_immediately_without_button(
+        self,
+    ) -> None:
+        from ui.settings_window import SettingsWindow
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = ActionsConfig(Path(temp_dir) / "actions.json")
+            window = SettingsWindow(config)
+            self.assertFalse(
+                any(
+                    button.text() == "Preview"
+                    for button in window.findChildren(QPushButton)
+                )
+            )
+
+            woven_index = window._ui_theme_combo.findData(UI_THEME_WOVEN)
+            window._ui_theme_combo.setCurrentIndex(woven_index)
+            self.assertEqual(window._pending_ui_theme, UI_THEME_WOVEN)
+            self.assertIn(
+                "smartaction-woven-light-ui",
+                window.styleSheet(),
+            )
+
+            classic_index = window._ui_theme_combo.findData(UI_THEME_CLASSIC)
+            window._ui_theme_combo.setCurrentIndex(classic_index)
+            self.assertEqual(window._pending_ui_theme, UI_THEME_CLASSIC)
+            self.assertNotIn(
+                "smartaction-woven-light-ui",
+                window.styleSheet(),
+            )
+            self.assertEqual(config.get_ui_theme(), UI_THEME_CLASSIC)
+            window.close()
+
+    def test_theme_card_labels_keep_contrast_on_light_backgrounds(self) -> None:
+        from ui.settings_window import _ThemeCard
+
+        card = _ThemeCard("sakura", THEMES["sakura"])
+        image = QImage(
+            card.size(),
+            QImage.Format.Format_ARGB32_Premultiplied,
+        )
+        image.fill(QColor(0, 0, 0, 0))
+        card.render(image)
+
+        label_backing = image.pixelColor(8, 84)
+        label_text = image.pixelColor(card.width() // 2, 84)
+        self.assertGreaterEqual(label_backing.alpha(), 210)
+        self.assertLess(label_backing.lightness(), 45)
+        self.assertGreaterEqual(label_text.lightness(), 220)
+        card.close()
+
+    def test_settings_cute_surface_is_deeper_than_utility_panels(self) -> None:
+        from ui.global_theme import UiAppearance, apply_ui_appearance
+        from ui.settings_window import SettingsWindow
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = ActionsConfig(Path(temp_dir) / "actions.json")
+            settings = SettingsWindow(config)
+            apply_ui_appearance(
+                settings,
+                UiAppearance(theme=UI_THEME_CUTE),
+            )
+            settings_surface = settings._right_stack.widget(0)
+            self.assertIn(
+                "background: rgba(246, 226, 236, 148)",
+                settings_surface.styleSheet(),
+            )
+
+            utility = QDialog()
+            utility_surface = QWidget(utility)
+            utility_surface.setStyleSheet("background: transparent;")
+            apply_ui_appearance(
+                utility,
+                UiAppearance(theme=UI_THEME_CUTE),
+            )
+            self.assertIn(
+                "background: rgba(255, 247, 250, 225)",
+                utility_surface.styleSheet(),
+            )
+            self.assertNotIn(
+                "rgba(246, 226, 236, 148)",
+                utility_surface.styleSheet(),
+            )
+            settings.close()
+            utility.close()
+
+    def test_ui_theme_config_and_background_install(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = ActionsConfig(root / "actions.json")
+            self.assertEqual(config.get_ui_theme(), UI_THEME_CLASSIC)
+
+            source = root / "sample.png"
+            image = QImage(8, 8, QImage.Format.Format_ARGB32)
+            image.fill(0xFFFFD6E4)
+            self.assertTrue(image.save(str(source)))
+
+            stored = config.install_ui_background(source)
+            config.set_ui_theme(UI_THEME_WOVEN)
+            self.assertEqual(config.get_ui_theme(), UI_THEME_WOVEN)
+            config.set_ui_theme(UI_THEME_CUTE)
+            config.set_ui_background_opacity(64)
+            config.set_ui_background_crop(175, 0.2, 0.8)
+
+            self.assertFalse(Path(stored).is_absolute())
+            self.assertTrue(config.resolve_ui_background().is_file())
+            self.assertEqual(config.get_ui_theme(), UI_THEME_CUTE)
+            self.assertEqual(config.get_ui_background_opacity(), 64)
+            self.assertEqual(config.get_ui_background_zoom(), 175)
+            self.assertEqual(config.get_ui_background_focus(), (0.2, 0.8))
+
+    def test_cute_uses_bundled_background_until_custom_image_is_set(
+        self,
+    ) -> None:
+        from ui.global_theme import (
+            appearance_from_config,
+            default_cute_background_path,
+        )
+        from ui.settings_window import SettingsWindow
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = ActionsConfig(root / "actions.json")
+            config.set_ui_theme(UI_THEME_CUTE)
+            config.set_ui_background("")
+
+            bundled = default_cute_background_path()
+            self.assertIsNotNone(bundled)
+            self.assertTrue(bundled.is_file())
+            self.assertEqual(
+                bundled.name,
+                "cute-default-background.png",
+            )
+            source = QImage(str(bundled))
+            self.assertGreaterEqual(source.width(), 2000)
+            self.assertGreaterEqual(source.height(), 680)
+
+            appearance = appearance_from_config(config)
+            self.assertEqual(appearance.background_path, bundled)
+            self.assertEqual(config.get_ui_background(), "")
+
+            window = SettingsWindow(config)
+            self.assertEqual(window._pending_ui_background_path(), bundled)
+            self.assertEqual(
+                window._ui_background_edit.text(),
+                "Built-in Cute background",
+            )
+            self.assertFalse(window._ui_background_clear.isEnabled())
+            self.assertTrue(window._ui_background_crop.isEnabled())
+            window.close()
+
+            custom = root / "custom.png"
+            custom_image = QImage(16, 16, QImage.Format.Format_ARGB32)
+            custom_image.fill(QColor("#334455"))
+            self.assertTrue(custom_image.save(str(custom)))
+            config.install_ui_background(custom)
+            self.assertEqual(
+                appearance_from_config(config).background_path,
+                config.resolve_ui_background(),
+            )
+
+    def test_tray_logo_matches_the_global_interface_theme(self) -> None:
+        from ui.tray_icon import TrayIcon, _make_icon
+
+        signatures = []
+        for theme in (UI_THEME_CLASSIC, UI_THEME_CUTE, UI_THEME_WOVEN):
+            image = _make_icon(theme).pixmap(64, 64).toImage()
+            signatures.append(
+                tuple(
+                    image.pixelColor(x, y).rgba()
+                    for y in range(4, 64, 7)
+                    for x in range(4, 64, 7)
+                )
+            )
+        self.assertEqual(len(set(signatures)), 3)
+
+        tray = TrayIcon(self.app, UI_THEME_CLASSIC)
+        classic_key = tray.icon().cacheKey()
+        tray.set_ui_theme(UI_THEME_CUTE)
+        self.assertEqual(tray._ui_theme, UI_THEME_CUTE)
+        self.assertNotEqual(tray.icon().cacheKey(), classic_key)
+        self.assertEqual(
+            self.app.windowIcon().cacheKey(),
+            tray.icon().cacheKey(),
+        )
+        tray.hide()
+
+    def test_background_crop_and_high_dpi_rendering(self) -> None:
+        from ui.global_theme import (
+            UiAppearance,
+            _render_background,
+            background_source_rect,
+        )
+
+        crop = background_source_rect(2048, 1152, 1180, 760, 100, 0.5, 0.5)
+        self.assertAlmostEqual(crop.width(), 1788.63, places=1)
+        self.assertAlmostEqual(crop.height(), 1152.0, places=1)
+        self.assertAlmostEqual(crop.left(), 129.68, places=1)
+        self.assertAlmostEqual(crop.top(), 0.0, places=1)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "background.png"
+            source = QImage(320, 180, QImage.Format.Format_ARGB32)
+            source.fill(0xFF75D9F3)
+            self.assertTrue(source.save(str(path)))
+            rendered = _render_background(
+                160,
+                100,
+                UiAppearance(
+                    theme=UI_THEME_CUTE,
+                    background_path=path,
+                    background_zoom=140,
+                    background_focus_x=0.25,
+                    background_focus_y=0.75,
+                ),
+                device_pixel_ratio=2.0,
+            )
+            self.assertEqual(rendered.size(), QSize(320, 200))
+            self.assertEqual(rendered.devicePixelRatio(), 2.0)
+
+    def test_background_crop_canvas_drag_repositions_image(self) -> None:
+        from ui.background_crop_dialog import BackgroundCropCanvas
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "wide-background.png"
+            source = QImage(600, 300, QImage.Format.Format_ARGB32)
+            source.fill(0xFFFFD6E4)
+            self.assertTrue(source.save(str(path)))
+
+            canvas = BackgroundCropCanvas(
+                path,
+                QSize(160, 100),
+                zoom=150,
+                focus_x=0.5,
+                focus_y=0.5,
+            )
+            canvas.resize(640, 400)
+            center = canvas.rect().center()
+            press = QMouseEvent(
+                QEvent.Type.MouseButtonPress,
+                QPointF(center),
+                QPointF(center),
+                QPointF(center),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+            )
+            move_pos = QPointF(center.x() + 90, center.y() - 45)
+            move = QMouseEvent(
+                QEvent.Type.MouseMove,
+                move_pos,
+                move_pos,
+                move_pos,
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+            )
+            self.app.sendEvent(canvas, press)
+            self.app.sendEvent(canvas, move)
+
+            zoom, focus_x, focus_y = canvas.transform()
+            self.assertEqual(zoom, 150)
+            self.assertLess(focus_x, 0.5)
+            self.assertGreater(focus_y, 0.5)
+            canvas.close()
+
+    def test_cute_theme_overlay_restores_original_widget_styles(self) -> None:
+        from ui.global_theme import UiAppearance, apply_ui_appearance
+
+        dialog = QDialog()
+        dialog.resize(500, 320)
+        button = QPushButton("Save", dialog)
+        original_style = "QPushButton { background: #123456; }"
+        button.setStyleSheet(original_style)
+
+        apply_ui_appearance(
+            dialog,
+            UiAppearance(theme=UI_THEME_CUTE, background_opacity=82),
+        )
+
+        self.assertIn("smartaction-cute-ui", button.styleSheet())
+        background = dialog.findChild(QLabel, "smartactionGlobalUiBackground")
+        self.assertIsNotNone(background)
+        self.assertFalse(background.isHidden())
+
+        apply_ui_appearance(dialog, UiAppearance(theme=UI_THEME_CLASSIC))
+        self.assertEqual(button.styleSheet(), original_style)
+        self.assertTrue(background.isHidden())
+        dialog.close()
+
+    def test_woven_light_theme_reacts_and_switches_without_style_leaks(self) -> None:
+        from ui.global_theme import UiAppearance, apply_ui_appearance
+        from ui.woven_light_background import WovenLightBackground
+
+        dialog = QDialog()
+        dialog.resize(640, 400)
+        button = QPushButton("Save", dialog)
+        label = QLabel("Dialog description", dialog)
+        original_style = "QPushButton { background: #123456; }"
+        button.setStyleSheet(original_style)
+        label.setStyleSheet("color: #F5F2EB;")
+
+        apply_ui_appearance(dialog, UiAppearance(theme=UI_THEME_CUTE))
+        self.assertIn("smartaction-cute-ui", button.styleSheet())
+        apply_ui_appearance(dialog, UiAppearance(theme=UI_THEME_WOVEN))
+
+        self.assertIn("smartaction-woven-light-ui", button.styleSheet())
+        self.assertNotIn("smartaction-cute-ui", button.styleSheet())
+        self.assertIn("color: #27313E", label.styleSheet())
+        backdrop = dialog.findChild(
+            WovenLightBackground,
+            "smartactionWovenLightBackground",
+            Qt.FindChildOption.FindDirectChildrenOnly,
+        )
+        self.assertIsNotNone(backdrop)
+        self.assertFalse(backdrop.isHidden())
+        self.assertEqual(backdrop.particle_count, 480)
+
+        before = backdrop._project_particles()
+        backdrop.set_test_pointer(QPointF(640 * 0.68, 400 * 0.49))
+        after = backdrop._project_particles()
+        self.assertTrue(any(point.proximity > 0 for point in after))
+        self.assertTrue(
+            any(
+                abs(first.x - second.x) > 0.1
+                or abs(first.y - second.y) > 0.1
+                for first, second in zip(before, after)
+            )
+        )
+
+        rendered = QImage(
+            backdrop.size(),
+            QImage.Format.Format_ARGB32_Premultiplied,
+        )
+        rendered.fill(QColor("white"))
+        backdrop.render(rendered)
+        saturated_samples = sum(
+            1
+            for y in range(0, rendered.height(), 4)
+            for x in range(0, rendered.width(), 4)
+            if rendered.pixelColor(x, y).saturation() >= 55
+            and rendered.pixelColor(x, y).value() <= 245
+        )
+        self.assertGreater(saturated_samples, 120)
+
+        menu = QMenu(dialog)
+        menu.setStyleSheet(
+            "QMenu::item { color: #F5F2EB; background: #11151D; }"
+        )
+        menu.addAction("Quick Start")
+        apply_ui_appearance(menu, UiAppearance(theme=UI_THEME_WOVEN))
+        self.assertIn("QMenu::item {\n    color: #1C2430;", menu.styleSheet())
+
+        apply_ui_appearance(dialog, UiAppearance(theme=UI_THEME_CLASSIC))
+        self.assertEqual(button.styleSheet(), original_style)
+        self.assertTrue(backdrop.isHidden())
+        dialog.close()
+
+    def test_transient_menu_never_receives_background_image_layer(self) -> None:
+        from ui.global_theme import UiAppearance, apply_ui_appearance
+
+        menu = QMenu()
+        menu.resize(240, 180)
+        menu.addAction("Settings")
+        apply_ui_appearance(
+            menu,
+            UiAppearance(theme=UI_THEME_CUTE, background_opacity=82),
+        )
+
+        background = menu.findChild(
+            QLabel,
+            "smartactionGlobalUiBackground",
+            Qt.FindChildOption.FindDirectChildrenOnly,
+        )
+        self.assertIsNone(background)
+        menu.close()
 
 
 class ClientWorkspaceOrganisationTests(unittest.TestCase):
@@ -296,6 +711,7 @@ class RingRotationRegressionTests(unittest.TestCase):
 
     def test_drag_rotates_without_launching_then_click_still_launches(self) -> None:
         ring = RingWindow()
+        ring._reduced_motion = True
         self.assertFalse(hasattr(ring, "_draw_ring_lines"))
         ring.resize(WINDOW_SIZE, WINDOW_SIZE)
         ring._ring_container_rect = QRectF(0, 0, WINDOW_SIZE, WINDOW_SIZE)
@@ -364,6 +780,7 @@ class RingRotationRegressionTests(unittest.TestCase):
 
     def test_action_label_card_is_clickable(self) -> None:
         ring = RingWindow()
+        ring._reduced_motion = True
         ring.resize(WINDOW_SIZE, WINDOW_SIZE)
         ring._ring_container_rect = QRectF(0, 0, WINDOW_SIZE, WINDOW_SIZE)
         item = MenuItem(id="settings", label="Settings", action_type="settings")
@@ -403,6 +820,42 @@ class RingRotationRegressionTests(unittest.TestCase):
         )
 
         self.assertEqual(activated, ["settings"])
+        ring.close()
+
+    def test_click_feedback_completes_before_action_activation(self) -> None:
+        ring = RingWindow()
+        ring._reduced_motion = False
+        item = MenuItem(id="one", label="One", action_type="command")
+        ring._nav_stack = [[item]]
+        activated: list[str] = []
+        ring.item_activated.connect(lambda selected: activated.append(selected.id))
+
+        ring._begin_click_feedback(0, item)
+        self.assertEqual(ring._click_slot, 0)
+        self.assertEqual(activated, [])
+
+        ring._anim_click.setCurrentTime(ring._anim_click.duration() // 2)
+        self.assertGreater(ring._click_progress, 0.0)
+        self.assertLess(ring._click_progress, 1.0)
+        ring._anim_click.setCurrentTime(ring._anim_click.duration())
+        self.app.processEvents()
+
+        self.assertEqual(activated, ["one"])
+        self.assertEqual(ring._click_slot, -1)
+        ring.close()
+
+    def test_hover_progress_freezes_quickly_and_melts_gradually(self) -> None:
+        ring = RingWindow()
+        ring._hovered_slot = 0
+        ring._advance_theme_frame()
+        frozen = ring._slot_hover_progress[0]
+        self.assertGreater(frozen, 0.0)
+
+        ring._hovered_slot = -1
+        ring._advance_theme_frame()
+        melting = ring._slot_hover_progress[0]
+        self.assertGreater(melting, 0.0)
+        self.assertLess(melting, frozen)
         ring.close()
 
     def test_nine_root_actions_are_all_directly_reachable(self) -> None:
@@ -448,6 +901,134 @@ class PerformanceRegressionTests(unittest.TestCase):
         assets = preload_theme_assets("tiger", load_all_frames=False)
         self.assertFalse(assets.frames_fully_loaded)
         ring.close()
+
+    def test_premium_rim_is_high_resolution_and_all_themes_animate(self) -> None:
+        rim_path = ASSETS_DIR / "themes" / "shared" / "premium_rim.png"
+        rim = QImage(str(rim_path))
+        self.assertFalse(rim.isNull())
+        self.assertGreaterEqual(rim.width(), 1000)
+        self.assertGreaterEqual(rim.height(), 1000)
+        self.assertTrue(rim.hasAlphaChannel())
+        self.assertLess(rim.pixelColor(rim.width() // 2, rim.height() // 2).alpha(), 12)
+
+        for theme_id in THEME_ORDER:
+            with self.subTest(theme_id=theme_id):
+                self.assertEqual(theme_frame_count(theme_id), 120)
+
+    def test_procedural_ring_themes_animate_without_bitmap_frames(self) -> None:
+        procedural = {"halloween", "kawaii", "sakura", "cyber", "ocean"}
+        self.assertTrue(procedural.issubset(THEMES))
+        self.assertTrue(procedural.issubset(THEME_ORDER))
+
+        for theme_id in procedural:
+            with self.subTest(theme_id=theme_id):
+                assets = preload_theme_assets(theme_id, load_all_frames=True)
+                self.assertEqual(assets.frames, [])
+                self.assertEqual(theme_frame_count(theme_id), 120)
+
+                image = QImage(84, 84, QImage.Format.Format_ARGB32_Premultiplied)
+                image.fill(QColor(0, 0, 0, 0))
+                painter = QPainter(image)
+                draw_energy_bubble(
+                    painter,
+                    42,
+                    42,
+                    30,
+                    theme_id,
+                    frame_index=31,
+                )
+                painter.end()
+                self.assertFalse(image.isNull())
+                self.assertNotEqual(image.pixelColor(42, 42).alpha(), 0)
+
+    def test_ocean_uses_wave_orbit_and_jelly_button_without_metal_rim(
+        self,
+    ) -> None:
+        image = QImage(460, 460, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(image)
+        with patch("ui.theme_painter.draw_premium_rim") as premium_rim:
+            draw_theme_orbit(painter, 230, 230, 163, "ocean", 31)
+            premium_rim.assert_not_called()
+        draw_jelly_button(
+            painter,
+            230,
+            230,
+            28,
+            QColor(8, 118, 175),
+        )
+        painter.end()
+
+        self.assertGreater(image.pixelColor(230, 230).alpha(), 0)
+        self.assertGreater(image.pixelColor(393, 230).alpha(), 0)
+
+    def test_custom_themes_have_independent_visual_dna_renderers(
+        self,
+    ) -> None:
+        from ui.theme_renderer import (
+            CyberThemeRenderer,
+            CosmicThemeRenderer,
+            HalloweenThemeRenderer,
+            IceThemeRenderer,
+            KawaiiThemeRenderer,
+            LavaThemeRenderer,
+            OceanThemeRenderer,
+            PurpleThemeRenderer,
+            SakuraThemeRenderer,
+            ThemeInteraction,
+            TigerThemeRenderer,
+            theme_renderer,
+        )
+
+        renderers = {
+            "tiger": (theme_renderer("tiger"), TigerThemeRenderer),
+            "purple": (theme_renderer("purple"), PurpleThemeRenderer),
+            "ice": (theme_renderer("ice"), IceThemeRenderer),
+            "lava": (theme_renderer("lava"), LavaThemeRenderer),
+            "cosmic": (theme_renderer("cosmic"), CosmicThemeRenderer),
+            "halloween": (
+                theme_renderer("halloween"),
+                HalloweenThemeRenderer,
+            ),
+            "kawaii": (theme_renderer("kawaii"), KawaiiThemeRenderer),
+            "sakura": (theme_renderer("sakura"), SakuraThemeRenderer),
+            "cyber": (theme_renderer("cyber"), CyberThemeRenderer),
+            "ocean": (theme_renderer("ocean"), OceanThemeRenderer),
+        }
+        for theme_id, (renderer, renderer_type) in renderers.items():
+            with self.subTest(theme_id=theme_id):
+                self.assertIsInstance(renderer, renderer_type)
+
+        tiger = renderers["tiger"][0]
+        purple = renderers["purple"][0]
+        self.assertIsInstance(tiger, TigerThemeRenderer)
+        self.assertIsInstance(purple, PurpleThemeRenderer)
+        self.assertNotEqual(tiger.dna.orbit_kind, purple.dna.orbit_kind)
+        self.assertNotEqual(
+            tiger.dna.button_material,
+            purple.dna.button_material,
+        )
+        self.assertNotEqual(tiger.dna.click_kind, purple.dna.click_kind)
+
+        image = QImage(460, 460, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(image)
+        state = ThemeInteraction(frame_index=37)
+        with patch("ui.theme_renderer.draw_premium_rim") as premium_rim:
+            for renderer, _renderer_type in renderers.values():
+                renderer.draw_orbit(painter, 230, 230, 163, state)
+            premium_rim.assert_not_called()
+        painter.end()
+
+        reduced_a = ThemeInteraction(
+            frame_index=3,
+            reduced_motion=True,
+        )
+        reduced_b = ThemeInteraction(
+            frame_index=98,
+            reduced_motion=True,
+        )
+        self.assertEqual(reduced_a.phase, reduced_b.phase)
 
 
 if __name__ == "__main__":

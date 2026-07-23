@@ -7,17 +7,18 @@ from core.action_runner import ActionRunner
 from core.actions_config import ActionsConfig
 from core.config_manager import ConfigManager
 from core.debug_log import debug_log
-from core.fonts import load_bundled_fonts
+from core.fonts import configure_application_font, load_bundled_fonts
 from core.hotkey_manager import HotkeyManager
 from core.menu_model import MenuItem
 from core.paths import ASSETS_DIR, BUNDLE_DIR, CONFIG_DIR, DOCS_DIR
 from ui.ring_ui import RingWindow
+from ui.global_theme import GlobalUiThemeManager
 from ui.theme_painter import theme_asset_debug_summary
 from ui.tray_icon import TrayIcon
 from ui.window_utils import screen_at_cursor, show_window_on_screen
 
 _ACTION_DELAY_MS = 120
-_APP_VERSION = "1.2.0"
+_APP_VERSION = "1.3.0"
 
 
 class Application(QApplication):
@@ -30,13 +31,15 @@ class Application(QApplication):
         self.setQuitOnLastWindowClosed(False)
 
         load_bundled_fonts()
+        configure_application_font(self)
 
         self._actions = ActionsConfig()
+        self._ui_theme = GlobalUiThemeManager(self, self._actions)
         self._config  = ConfigManager()
         self._hotkey  = HotkeyManager(self._config)
         self._runner  = ActionRunner()
         self._ring    = RingWindow()
-        self._tray    = TrayIcon(self)
+        self._tray    = TrayIcon(self, self._actions.get_ui_theme())
         self._settings_win = None
         self._ps_library_win = None
         self._client_workspace_win = None
@@ -186,6 +189,8 @@ class Application(QApplication):
         self._settings_win = None
         from PySide6.QtWidgets import QDialog
         if result == QDialog.DialogCode.Accepted:
+            self._ui_theme.reload()
+            self._tray.set_ui_theme(self._actions.get_ui_theme())
             new_combo = self._actions.get_hotkey()
             self._hotkey.stop()
             ok = self._hotkey.start(new_combo)
@@ -220,6 +225,8 @@ class Application(QApplication):
             )
             return
         self._actions.reload()
+        self._ui_theme.reload()
+        self._tray.set_ui_theme(self._actions.get_ui_theme())
         combo = self._actions.get_hotkey()
         self._hotkey.stop()
         ok = self._hotkey.start(combo)

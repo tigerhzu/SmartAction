@@ -12,7 +12,7 @@ incrementally, one screen at a time, in later redesign passes.
 """
 from __future__ import annotations
 
-from core.fonts import DISPLAY_FONT_FAMILY
+from core.fonts import UI_DISPLAY_FONT_CANDIDATES, UI_FONT_CANDIDATES
 
 # ── Color ─────────────────────────────────────────────────────────────────────
 # Base surfaces (darkest → lightest)
@@ -62,10 +62,10 @@ CORNER_CUT_PX = 6
 
 # ── Typography ────────────────────────────────────────────────────────────────
 # Body/UI face — native Windows, zero bundling risk.
-BODY_FONT_FAMILY = "Segoe UI Variable, Segoe UI"
+BODY_FONT_FAMILY = f'"{UI_FONT_CANDIDATES[0]}"'
 # Display/headline face — bundled (see core/fonts.py), used sparingly for
 # dialog titles, ring branding, and about-page text only. Never body text.
-HEADLINE_FONT_FAMILY = DISPLAY_FONT_FAMILY
+HEADLINE_FONT_FAMILY = UI_DISPLAY_FONT_CANDIDATES[0]
 # Console/monospace — already used by PowerShell Library / Environment Check.
 MONO_FONT_FAMILY = 'Consolas, "Cascadia Mono", monospace'
 

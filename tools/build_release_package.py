@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 
-VERSION = "v1.2.0"
+VERSION = "v1.3.0"
 APP_NAME = "SmartAction"
 ADDON_ID = "smartaction-container-helper@naughtytiger06.local"
 HOST_NAME = "smartaction_firefox_helper"
@@ -24,6 +24,7 @@ PUBLIC_DOCS = {
     "help.md",
     "quick-start.md",
     "help-center.md",
+    "ui-themes.md",
     "client-workspace.md",
     "firefox-container-helper.md",
     "firefox-helper-signing.md",
@@ -53,11 +54,17 @@ FORBIDDEN_TEXT = [
 
 
 RELEASE_ACTIONS = {
-    "version": "1.1",
+    "version": "1.3",
     "hotkey": "ctrl+alt+space",
     "theme": "tiger",
     "constellation": "scorpio",
     "constellation_color": "#F2760B",
+    "ui_theme": "classic",
+    "ui_background": "",
+    "ui_background_opacity": 82,
+    "ui_background_zoom": 100,
+    "ui_background_focus_x": 0.5,
+    "ui_background_focus_y": 0.5,
     "actions": [
         {
             "id": "getting_started",

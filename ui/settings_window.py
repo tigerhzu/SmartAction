@@ -17,10 +17,8 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QLineF, QPointF, QRect, QRectF, QSettings, QSize, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
-    QBrush,
     QColor,
     QFont,
-    QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
@@ -42,6 +40,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QMenu,
     QPushButton,
+    QScrollArea,
+    QSlider,
     QSizePolicy,
     QStackedWidget,
     QTableWidget,
@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.actions_config import ActionsConfig
+from core.actions_config import UI_THEME_CLASSIC, UI_THEME_CUTE, UI_THEME_WOVEN
 from core import autostart as _autostart
 from core.constellation import (
     CONSTELLATION_ORDER,
@@ -73,9 +74,12 @@ from core.profile_manager import (
     export_profile,
     import_profile,
 )
+from ui.motion_preferences import (
+    reduced_motion_enabled,
+    set_reduced_motion_enabled,
+)
 from ui.theme_painter import (
-    draw_energy_bubble,
-    draw_theme_card_background,
+    draw_jelly_button,
     prune_theme_asset_cache,
     theme_frame_count,
 )
@@ -86,7 +90,6 @@ from ui.style_tokens import (
     BODY_FONT_FAMILY,
     BUTTON_MIN_HEIGHT,
     CHARCOAL,
-    CORNER_CUT_PX,
     EMBER,
     EMBER_HOVER,
     EMBER_PRESSED,
@@ -701,10 +704,10 @@ def _confirm_delete(parent: QWidget, title: str, message: str) -> bool:
 
 
 class _ThemeCard(QPushButton):
-    """Custom-painted glass theme card used in the Settings theme row."""
+    """Compact jelly-style theme button used in the Settings theme row."""
 
-    _W = 104
-    _H = 124
+    _W = 88
+    _H = 100
 
     def __init__(self, theme_id: str, theme_data: dict,
                  parent: QWidget | None = None) -> None:
@@ -729,102 +732,203 @@ class _ThemeCard(QPushButton):
             self._frame_index = frame_index
             self.update()
 
-    def _cut_corner_path(self, rect: QRectF, cut: float) -> QPainterPath:
-        """Rounded rect except the top-right corner, which is chamfered — the
-        app's recurring "cut steel" shape instead of a uniformly rounded card."""
-        path = QPainterPath()
-        r = 10.0
-        path.moveTo(rect.left() + r, rect.top())
-        path.lineTo(rect.right() - cut, rect.top())
-        path.lineTo(rect.right(), rect.top() + cut)
-        path.lineTo(rect.right(), rect.bottom() - r)
-        path.quadTo(rect.right(), rect.bottom(), rect.right() - r, rect.bottom())
-        path.lineTo(rect.left() + r, rect.bottom())
-        path.quadTo(rect.left(), rect.bottom(), rect.left(), rect.bottom() - r)
-        path.lineTo(rect.left(), rect.top() + r)
-        path.quadTo(rect.left(), rect.top(), rect.left() + r, rect.top())
-        path.closeSubpath()
-        return path
+    def _draw_theme_glyph(self, p: QPainter, cx: float, cy: float) -> None:
+        """Draw a crisp vector motif without relying on emoji font support."""
+        p.save()
+        p.translate(cx, cy)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(
+            QPen(
+                QColor(255, 255, 255, 238),
+                2.5,
+                Qt.PenStyle.SolidLine,
+                Qt.PenCapStyle.RoundCap,
+                Qt.PenJoinStyle.RoundJoin,
+            )
+        )
+
+        if self._tid == "tiger":
+            for offset in (-8.0, 0.0, 8.0):
+                p.drawLine(QLineF(-9.0, offset - 4.0, 9.0, offset + 4.0))
+        elif self._tid == "purple":
+            diamond = QPainterPath()
+            diamond.moveTo(0.0, -13.0)
+            diamond.lineTo(12.0, 0.0)
+            diamond.lineTo(0.0, 13.0)
+            diamond.lineTo(-12.0, 0.0)
+            diamond.closeSubpath()
+            p.drawPath(diamond)
+            p.drawEllipse(QPointF(0.0, 0.0), 3.2, 3.2)
+        elif self._tid == "ice":
+            for angle in (0.0, 60.0, 120.0):
+                p.save()
+                p.rotate(angle)
+                p.drawLine(QLineF(-13.0, 0.0, 13.0, 0.0))
+                p.drawLine(QLineF(8.0, 0.0, 4.5, -3.5))
+                p.drawLine(QLineF(8.0, 0.0, 4.5, 3.5))
+                p.restore()
+        elif self._tid == "lava":
+            flame = QPainterPath()
+            flame.moveTo(0.0, 13.0)
+            flame.cubicTo(-11.0, 8.0, -11.0, -2.0, -2.0, -13.0)
+            flame.cubicTo(-2.5, -4.0, 4.0, -4.5, 5.0, -11.0)
+            flame.cubicTo(14.0, -1.0, 10.0, 10.0, 0.0, 13.0)
+            flame.closeSubpath()
+            p.drawPath(flame)
+        elif self._tid == "cosmic":
+            star = QPainterPath()
+            star.moveTo(0.0, -14.0)
+            star.lineTo(3.2, -3.2)
+            star.lineTo(14.0, 0.0)
+            star.lineTo(3.2, 3.2)
+            star.lineTo(0.0, 14.0)
+            star.lineTo(-3.2, 3.2)
+            star.lineTo(-14.0, 0.0)
+            star.lineTo(-3.2, -3.2)
+            star.closeSubpath()
+            p.drawPath(star)
+        elif self._tid == "halloween":
+            ghost = QPainterPath()
+            ghost.moveTo(-10.0, 11.0)
+            ghost.lineTo(-10.0, -2.0)
+            ghost.cubicTo(-10.0, -16.0, 10.0, -16.0, 10.0, -2.0)
+            ghost.lineTo(10.0, 11.0)
+            ghost.cubicTo(6.0, 6.0, 3.0, 15.0, 0.0, 10.0)
+            ghost.cubicTo(-3.0, 15.0, -6.0, 6.0, -10.0, 11.0)
+            p.drawPath(ghost)
+            p.setBrush(QColor(255, 255, 255, 238))
+            p.drawEllipse(QPointF(-3.5, -3.0), 1.7, 2.2)
+            p.drawEllipse(QPointF(3.5, -3.0), 1.7, 2.2)
+        elif self._tid == "kawaii":
+            heart = QPainterPath()
+            heart.moveTo(0.0, 12.0)
+            heart.cubicTo(-4.0, 7.0, -13.0, 1.0, -13.0, -6.0)
+            heart.cubicTo(-13.0, -14.0, -3.0, -15.0, 0.0, -9.0)
+            heart.cubicTo(3.0, -15.0, 13.0, -14.0, 13.0, -6.0)
+            heart.cubicTo(13.0, 1.0, 4.0, 7.0, 0.0, 12.0)
+            heart.closeSubpath()
+            p.drawPath(heart)
+        elif self._tid == "sakura":
+            for angle in range(0, 360, 72):
+                p.save()
+                p.rotate(angle)
+                p.drawEllipse(QRectF(-3.5, -13.0, 7.0, 11.0))
+                p.restore()
+            p.drawEllipse(QPointF(), 2.4, 2.4)
+        elif self._tid == "cyber":
+            p.drawLine(QLineF(-13.0, -8.0, -13.0, 8.0))
+            p.drawLine(QLineF(-13.0, -8.0, -7.0, -8.0))
+            p.drawLine(QLineF(-13.0, 8.0, -7.0, 8.0))
+            p.drawLine(QLineF(13.0, -8.0, 13.0, 8.0))
+            p.drawLine(QLineF(13.0, -8.0, 7.0, -8.0))
+            p.drawLine(QLineF(13.0, 8.0, 7.0, 8.0))
+            p.setBrush(QColor(255, 255, 255, 238))
+            p.drawEllipse(QPointF(), 4.0, 4.0)
+        else:
+            wave = QPainterPath()
+            wave.moveTo(-14.0, 5.0)
+            wave.cubicTo(-8.0, -2.0, -3.0, 12.0, 3.0, 5.0)
+            wave.cubicTo(7.0, 0.0, 10.0, 1.0, 14.0, 4.0)
+            p.drawPath(wave)
+            fin = QPainterPath()
+            fin.moveTo(-3.0, 2.0)
+            fin.lineTo(2.0, -10.0)
+            fin.lineTo(7.0, 3.0)
+            fin.closeSubpath()
+            p.setBrush(QColor(255, 255, 255, 238))
+            p.drawPath(fin)
+        p.restore()
 
     def paintEvent(self, _event) -> None:
         p  = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-        outer = QRectF(2, 3, self._W - 4, self._H - 6)
-        card = self._cut_corner_path(outer, CORNER_CUT_PX * 1.5)
-
-        p.setPen(Qt.PenStyle.NoPen)
-        p.save()
-        p.setClipPath(card)
-        used_bg = draw_theme_card_background(p, outer, self._tid)
-        p.restore()
-        if not used_bg:
-            bg = QLinearGradient(outer.left(), outer.top(), outer.right(), outer.bottom())
-            bg.setColorAt(0.0, QColor(36, 38, 64, 232))
-            bg.setColorAt(0.52, QColor(17, 20, 38, 235))
-            bg.setColorAt(1.0, QColor(10, 12, 28, 238))
-            p.fillPath(card, QBrush(bg))
-
-            wash = QLinearGradient(outer.left(), outer.top(), outer.left(), outer.bottom())
-            wash.setColorAt(0.0, QColor(*self._tdata["glow"]))
-            wash.setColorAt(0.58, QColor(0, 0, 0, 0))
-            wash.setColorAt(1.0, QColor(0, 0, 0, 35))
-            p.fillPath(card, QBrush(wash))
-
-        border = QColor(142, 129, 190, 78)
-        if self._sel:
-            border = QColor(EMBER)
-            p.setPen(QPen(QColor(242, 118, 11, 92), 5.0))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawPath(self._cut_corner_path(outer.adjusted(2, 2, -2, -2), CORNER_CUT_PX * 1.5 - 2))
-        p.setPen(QPen(border, 1.5 if self._sel else 1.0))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawPath(self._cut_corner_path(outer.adjusted(0.5, 0.5, -0.5, -0.5), CORNER_CUT_PX * 1.5))
-
         cx = self._W / 2.0
-        cy = 45.0
-        draw_energy_bubble(
+        cy = 34.0
+        button_radius = 29.0
+        base = QColor(self._tdata["preview_color"])
+        draw_jelly_button(
             p,
             cx,
             cy,
-            31.0,
-            self._tid,
-            selected=self._sel,
+            button_radius + (1.0 if self.underMouse() else 0.0),
+            base,
             hovered=self.underMouse(),
-            rim_width=10.0,
-            inner_fill=QColor(20, 22, 42, 218),
-            frame_index=self._frame_index,
-            animate=self._sel,
         )
+        self._draw_theme_glyph(p, cx, cy)
 
         if self._sel:
-            chk_cx, chk_cy, chk_r = self._W - 19.0, 20.0, 12.0
-            p.setPen(QPen(QColor(242, 118, 11, 120), 4.0))
-            p.setBrush(QColor(255, 247, 237, 255))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(255, 255, 255, 230), 2.2))
+            p.drawEllipse(
+                QPointF(cx, cy),
+                button_radius + 4.0,
+                button_radius + 4.0,
+            )
+            chk_cx, chk_cy, chk_r = cx + 23.0, cy - 23.0, 8.5
+            p.setPen(QPen(QColor(255, 255, 255, 178), 1.2))
+            p.setBrush(base.lighter(128))
             p.drawEllipse(QPointF(chk_cx, chk_cy), chk_r, chk_r)
-            p.setPen(QPen(QColor(EMBER), 2.4, Qt.PenStyle.SolidLine,
-                          Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-            p.drawLine(QLineF(chk_cx - 4.2, chk_cy - 0.3, chk_cx - 1.0, chk_cy + 3.2))
-            p.drawLine(QLineF(chk_cx - 1.0, chk_cy + 3.2, chk_cx + 5.0, chk_cy - 4.8))
+            p.setPen(
+                QPen(
+                    QColor(255, 255, 255),
+                    1.8,
+                    Qt.PenStyle.SolidLine,
+                    Qt.PenCapStyle.RoundCap,
+                    Qt.PenJoinStyle.RoundJoin,
+                )
+            )
+            p.drawLine(
+                QLineF(
+                    chk_cx - 3.2,
+                    chk_cy,
+                    chk_cx - 0.8,
+                    chk_cy + 2.6,
+                )
+            )
+            p.drawLine(
+                QLineF(
+                    chk_cx - 0.8,
+                    chk_cy + 2.6,
+                    chk_cx + 4.0,
+                    chk_cy - 3.2,
+                )
+            )
 
-        band = QRectF(3.5, 86, self._W - 7, 34)
-        band_path = QPainterPath()
-        band_path.addRoundedRect(band, 9, 9)
-        band_grad = QLinearGradient(band.left(), band.top(), band.left(), band.bottom())
-        band_grad.setColorAt(0.0, QColor(255, 255, 255, 18 if self._sel else 9))
-        band_grad.setColorAt(1.0, QColor(*self._tdata["glow"]))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.fillPath(band_path, QBrush(band_grad))
+        label_rect = QRectF(3.0, 68.0, self._W - 6.0, 30.0)
+        label_fill = (
+            QColor(base).darker(190)
+            if self._sel
+            else QColor(8, 13, 24)
+        )
+        label_fill.setAlpha(238 if self._sel else 218)
+        p.setPen(QPen(QColor(255, 255, 255, 62), 0.75))
+        p.setBrush(label_fill)
+        p.drawRoundedRect(label_rect, 9.0, 9.0)
 
         font = QFont()
-        font.setPixelSize(12)
-        font.setBold(self._sel)
+        font.setPixelSize(11)
+        font.setWeight(
+            QFont.Weight.Bold if self._sel else QFont.Weight.DemiBold
+        )
         p.setFont(font)
-        p.setPen(QColor(245, 242, 255) if self._sel else QColor(218, 222, 240))
+        text_rect = label_rect.adjusted(3.0, 0.0, -3.0, 0.0)
+        alignment = (
+            Qt.AlignmentFlag.AlignHCenter
+            | Qt.AlignmentFlag.AlignVCenter
+            | Qt.TextFlag.TextWordWrap
+        )
+        p.setPen(QColor(0, 0, 0, 176))
         p.drawText(
-            QRectF(9, 88, self._W - 18, 31),
-            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextWordWrap,
+            text_rect.translated(0.0, 1.0),
+            alignment,
+            self._tdata["name"],
+        )
+        p.setPen(QColor(255, 255, 255, 252))
+        p.drawText(
+            text_rect,
+            alignment,
             self._tdata["name"],
         )
         p.end()
@@ -1026,6 +1130,9 @@ class SettingsWindow(QDialog):
 
     def __init__(self, config: ActionsConfig, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        # The large Settings canvas needs less white wash than utility
+        # dialogs so custom artwork remains saturated and comfortably dark.
+        self.setProperty("smartactionCuteDeepSurface", True)
         self._config     = config
         self._draft         = copy.deepcopy(config.get_raw_actions())
         self._ensure_action_ids(self._draft)
@@ -1036,6 +1143,15 @@ class SettingsWindow(QDialog):
         self._pending_theme = config.get_theme()
         self._pending_constellation = config.get_constellation()
         self._pending_constellation_color = config.get_constellation_color()
+        self._pending_ui_theme = config.get_ui_theme()
+        self._pending_ui_background = config.get_ui_background()
+        self._pending_ui_background_source: Path | None = None
+        self._pending_ui_background_opacity = config.get_ui_background_opacity()
+        self._pending_ui_background_zoom = config.get_ui_background_zoom()
+        (
+            self._pending_ui_background_focus_x,
+            self._pending_ui_background_focus_y,
+        ) = config.get_ui_background_focus()
         self._theme_frame   = 0
         self._theme_timer   = QTimer(self)
         self._theme_timer.setInterval(84)
@@ -1100,6 +1216,8 @@ class SettingsWindow(QDialog):
         root.addWidget(self._make_hotkey_row())
         root.addWidget(_divider_h())
         root.addWidget(self._make_theme_row())
+        root.addWidget(_divider_h())
+        root.addWidget(self._make_ui_style_row())
         root.addWidget(_divider_h())
         root.addWidget(self._make_profile_row())
         root.addWidget(_divider_h())
@@ -1231,14 +1349,29 @@ class SettingsWindow(QDialog):
         self._check_autostart.setStyleSheet(_S_CHECKBOX + f"QCheckBox {{ font-size: 12px; color: {FOG}; }}")
         row.addWidget(self._check_autostart)
 
+        self._check_reduced_motion = QCheckBox("Reduce ring motion")
+        self._check_reduced_motion.setChecked(reduced_motion_enabled())
+        self._check_reduced_motion.setToolTip(
+            "Disable continuous ring, hover, click, and opening animations"
+        )
+        self._check_reduced_motion.setStyleSheet(
+            _S_CHECKBOX
+            + f"QCheckBox {{ font-size: 12px; color: {FOG}; }}"
+        )
+        self._check_reduced_motion.toggled.connect(
+            self._on_reduced_motion_toggled
+        )
+        row.addWidget(self._check_reduced_motion)
+
         return w
 
     def _make_theme_row(self) -> QWidget:
         from core.theme import THEME_ORDER, THEMES
         w = QWidget()
-        w.setFixedHeight(154)
+        w.setObjectName("ringThemeRow")
+        w.setFixedHeight(138)
         w.setStyleSheet(f"""
-            QWidget {{
+            QWidget#ringThemeRow {{
                 background: {_PANEL_BG_ALT};
                 border-top: 1px solid {_SOFT_LINE};
                 border-bottom: 1px solid {_SOFT_LINE};
@@ -1253,14 +1386,46 @@ class SettingsWindow(QDialog):
         lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         row.addWidget(lbl)
 
+        theme_scroll = QScrollArea()
+        theme_scroll.setObjectName("ringThemeScroll")
+        theme_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        theme_scroll.setWidgetResizable(True)
+        theme_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        theme_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        theme_scroll.setFixedHeight(110)
+        theme_scroll.setStyleSheet("""
+            QScrollArea#ringThemeScroll,
+            QScrollArea#ringThemeScroll > QWidget > QWidget {
+                background: transparent;
+                border: none;
+            }
+        """)
+
+        theme_strip = QWidget()
+        theme_strip.setObjectName("ringThemeStrip")
+        theme_strip.setMinimumWidth(
+            len(THEME_ORDER) * _ThemeCard._W + (len(THEME_ORDER) - 1) * 10
+        )
+        theme_strip.setFixedHeight(_ThemeCard._H)
+        theme_layout = QHBoxLayout(theme_strip)
+        theme_layout.setContentsMargins(0, 0, 0, 0)
+        theme_layout.setSpacing(10)
+
         self._theme_btns: dict[str, _ThemeCard] = {}
         for tid in THEME_ORDER:
             card = _ThemeCard(tid, THEMES[tid])
             card.clicked.connect(lambda checked=False, theme_id=tid: self._select_theme(theme_id))
             self._theme_btns[tid] = card
-            row.addWidget(card)
+            theme_layout.addWidget(card)
 
-        row.addStretch()
+        theme_layout.addStretch()
+        theme_scroll.setWidget(theme_strip)
+        self._theme_scroll = theme_scroll
+        row.addWidget(theme_scroll, stretch=1)
 
         constellation_panel = QWidget()
         constellation_panel.setFixedWidth(160)
@@ -1318,6 +1483,83 @@ class SettingsWindow(QDialog):
 
         self._update_theme_btns()
         self._update_constellation_color_button()
+        return w
+
+    def _make_ui_style_row(self) -> QWidget:
+        w = QWidget()
+        w.setFixedHeight(78)
+        w.setStyleSheet(f"""
+            QWidget {{
+                background: {_PANEL_BG};
+                border-top: 1px solid {_SOFT_LINE};
+                border-bottom: 1px solid {_SOFT_LINE};
+            }}
+        """)
+        row = QHBoxLayout(w)
+        row.setContentsMargins(24, 0, 24, 0)
+        row.setSpacing(10)
+
+        title = QLabel("Interface:")
+        title.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {FOG};")
+        row.addWidget(title)
+
+        self._ui_theme_combo = QComboBox()
+        self._ui_theme_combo.setFixedWidth(260)
+        self._ui_theme_combo.setStyleSheet(_S_COMBO)
+        self._ui_theme_combo.addItem("Classic — original dark UI", UI_THEME_CLASSIC)
+        self._ui_theme_combo.addItem("Cute — pastel + custom image", UI_THEME_CUTE)
+        self._ui_theme_combo.addItem(
+            "Woven Light — interactive particles",
+            UI_THEME_WOVEN,
+        )
+        theme_index = self._ui_theme_combo.findData(self._pending_ui_theme)
+        self._ui_theme_combo.setCurrentIndex(max(0, theme_index))
+        self._ui_theme_combo.currentIndexChanged.connect(self._on_ui_theme_changed)
+        row.addWidget(self._ui_theme_combo)
+
+        self._ui_background_edit = QLineEdit()
+        self._ui_background_edit.setReadOnly(True)
+        self._ui_background_edit.setPlaceholderText("Built-in pastel background")
+        self._ui_background_edit.setStyleSheet(_S_FIELD)
+        self._ui_background_edit.setMinimumWidth(180)
+        self._ui_background_edit.setText(self._ui_background_display_text())
+        row.addWidget(self._ui_background_edit, stretch=1)
+
+        self._ui_background_browse = QPushButton("Choose Image")
+        self._ui_background_browse.setStyleSheet(_S_BTN_SMALL)
+        self._ui_background_browse.clicked.connect(self._choose_ui_background)
+        row.addWidget(self._ui_background_browse)
+
+        self._ui_background_crop = QPushButton("Crop")
+        self._ui_background_crop.setToolTip(
+            "Drag and zoom the image inside the background frame"
+        )
+        self._ui_background_crop.setStyleSheet(_S_BTN_SMALL)
+        self._ui_background_crop.clicked.connect(self._edit_ui_background_crop)
+        row.addWidget(self._ui_background_crop)
+
+        self._ui_background_clear = QPushButton("Clear")
+        self._ui_background_clear.setStyleSheet(_S_BTN_SMALL)
+        self._ui_background_clear.clicked.connect(self._clear_ui_background)
+        row.addWidget(self._ui_background_clear)
+
+        opacity_title = QLabel("Image:")
+        opacity_title.setStyleSheet(f"font-size: 11px; color: {FOG};")
+        row.addWidget(opacity_title)
+
+        self._ui_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self._ui_opacity_slider.setRange(15, 100)
+        self._ui_opacity_slider.setValue(self._pending_ui_background_opacity)
+        self._ui_opacity_slider.setFixedWidth(90)
+        self._ui_opacity_slider.valueChanged.connect(self._on_ui_opacity_changed)
+        row.addWidget(self._ui_opacity_slider)
+
+        self._ui_opacity_label = QLabel(f"{self._pending_ui_background_opacity}%")
+        self._ui_opacity_label.setFixedWidth(34)
+        self._ui_opacity_label.setStyleSheet(f"font-size: 11px; color: {FOG};")
+        row.addWidget(self._ui_opacity_label)
+
+        self._update_ui_style_controls()
         return w
 
     def _make_profile_row(self) -> QWidget:
@@ -1494,6 +1736,12 @@ class SettingsWindow(QDialog):
                 theme_override=self._pending_theme,
                 constellation_override=self._pending_constellation,
                 constellation_color_override=self._pending_constellation_color,
+                ui_theme_override=self._pending_ui_theme,
+                ui_background_override=self._pending_ui_background,
+                ui_background_opacity_override=self._pending_ui_background_opacity,
+                ui_background_zoom_override=self._pending_ui_background_zoom,
+                ui_background_focus_x_override=self._pending_ui_background_focus_x,
+                ui_background_focus_y_override=self._pending_ui_background_focus_y,
             )
         except Exception as exc:
             QMessageBox.warning(self, "Export Profile", f"Profile export failed:\n{exc}")
@@ -1537,6 +1785,15 @@ class SettingsWindow(QDialog):
         self._pending_theme = self._config.get_theme()
         self._pending_constellation = self._config.get_constellation()
         self._pending_constellation_color = self._config.get_constellation_color()
+        self._pending_ui_theme = self._config.get_ui_theme()
+        self._pending_ui_background = self._config.get_ui_background()
+        self._pending_ui_background_source = None
+        self._pending_ui_background_opacity = self._config.get_ui_background_opacity()
+        self._pending_ui_background_zoom = self._config.get_ui_background_zoom()
+        (
+            self._pending_ui_background_focus_x,
+            self._pending_ui_background_focus_y,
+        ) = self._config.get_ui_background_focus()
         self._hotkey_edit.setText(self._config.get_hotkey())
         self._sel_action = -1
         self._refresh_action_list()
@@ -1546,6 +1803,11 @@ class SettingsWindow(QDialog):
         )
         self._constellation_combo.setCurrentIndex(max(0, constellation_index))
         self._update_constellation_color_button()
+        ui_theme_index = self._ui_theme_combo.findData(self._pending_ui_theme)
+        self._ui_theme_combo.setCurrentIndex(max(0, ui_theme_index))
+        self._ui_background_edit.setText(self._ui_background_display_text())
+        self._ui_opacity_slider.setValue(self._pending_ui_background_opacity)
+        self._update_ui_style_controls()
         self._right_stack.setCurrentIndex(0)
 
         message = (
@@ -1559,6 +1821,176 @@ class SettingsWindow(QDialog):
                 "They may not work on this computer until the paths are updated."
             )
         QMessageBox.information(self, "Import Profile", message)
+
+    def _on_ui_theme_changed(self, index: int) -> None:
+        self._pending_ui_theme = str(
+            self._ui_theme_combo.itemData(index) or UI_THEME_CLASSIC
+        )
+        self._update_ui_style_controls()
+        self._preview_ui_theme()
+
+    def _on_ui_opacity_changed(self, value: int) -> None:
+        self._pending_ui_background_opacity = int(value)
+        self._ui_opacity_label.setText(f"{value}%")
+        if self._pending_ui_theme == UI_THEME_CUTE:
+            self._preview_ui_theme()
+
+    def _choose_ui_background(self) -> None:
+        path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "Choose global UI background",
+            "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.webp)",
+        )
+        if not path:
+            return
+        candidate = Path(path)
+        if not self._open_background_crop_dialog(
+            candidate,
+            zoom=100,
+            focus_x=0.5,
+            focus_y=0.5,
+        ):
+            return
+        self._pending_ui_background_source = candidate
+        self._ui_background_edit.setText(str(self._pending_ui_background_source))
+        self._ui_background_edit.setToolTip(str(self._pending_ui_background_source))
+        self._update_ui_style_controls()
+        self._preview_ui_theme()
+
+    def _edit_ui_background_crop(self) -> None:
+        path = self._pending_ui_background_path()
+        if path is None or not path.is_file():
+            return
+        if self._open_background_crop_dialog(
+            path,
+            zoom=self._pending_ui_background_zoom,
+            focus_x=self._pending_ui_background_focus_x,
+            focus_y=self._pending_ui_background_focus_y,
+        ):
+            self._preview_ui_theme()
+
+    def _open_background_crop_dialog(
+        self,
+        path: Path,
+        *,
+        zoom: int,
+        focus_x: float,
+        focus_y: float,
+    ) -> bool:
+        from ui.background_crop_dialog import BackgroundCropDialog
+
+        dialog = BackgroundCropDialog(
+            path,
+            self.size(),
+            zoom=zoom,
+            focus_x=focus_x,
+            focus_y=focus_y,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+        (
+            self._pending_ui_background_zoom,
+            self._pending_ui_background_focus_x,
+            self._pending_ui_background_focus_y,
+        ) = dialog.crop_values()
+        return True
+
+    def _clear_ui_background(self) -> None:
+        self._pending_ui_background = ""
+        self._pending_ui_background_source = None
+        self._pending_ui_background_zoom = 100
+        self._pending_ui_background_focus_x = 0.5
+        self._pending_ui_background_focus_y = 0.5
+        self._ui_background_edit.clear()
+        self._ui_background_edit.setToolTip("")
+        self._update_ui_style_controls()
+        self._preview_ui_theme()
+
+    def _ui_background_display_text(self) -> str:
+        path = self._config.resolve_ui_background(self._pending_ui_background)
+        if path:
+            return str(path)
+        if self._pending_ui_theme == UI_THEME_CUTE:
+            return "Built-in Cute background"
+        return ""
+
+    def _pending_ui_background_path(self) -> Path | None:
+        if self._pending_ui_background_source is not None:
+            return self._pending_ui_background_source
+        custom_path = self._config.resolve_ui_background(
+            self._pending_ui_background
+        )
+        if custom_path is not None and custom_path.is_file():
+            return custom_path
+        if self._pending_ui_theme == UI_THEME_CUTE:
+            from ui.global_theme import default_cute_background_path
+
+            return default_cute_background_path()
+        return None
+
+    def _update_ui_style_controls(self) -> None:
+        is_cute = self._pending_ui_theme == UI_THEME_CUTE
+        effective_path = self._pending_ui_background_path()
+        has_image = effective_path is not None
+        has_custom_image = (
+            self._pending_ui_background_source is not None
+            or bool(self._pending_ui_background)
+        )
+        if self._pending_ui_theme == UI_THEME_WOVEN:
+            self._ui_background_edit.setText(
+                "Interactive particle tapestry (built in)"
+            )
+            self._ui_background_edit.setPlaceholderText(
+                "Built-in interactive particle tapestry"
+            )
+            self._ui_background_edit.setToolTip(
+                "Woven Light reacts to the pointer and does not use an image."
+            )
+        else:
+            if is_cute and not has_custom_image and effective_path is not None:
+                self._ui_background_edit.setText("Built-in Cute background")
+                self._ui_background_edit.setToolTip(str(effective_path))
+            else:
+                self._ui_background_edit.setText(
+                    str(effective_path) if effective_path else ""
+                )
+            self._ui_background_edit.setPlaceholderText(
+                "Built-in pastel background"
+            )
+            if (
+                self._pending_ui_background_source is None
+                and has_custom_image
+            ):
+                self._ui_background_edit.setToolTip("")
+        for widget in (
+            self._ui_background_edit,
+            self._ui_background_browse,
+            self._ui_background_crop,
+            self._ui_background_clear,
+            self._ui_opacity_slider,
+            self._ui_opacity_label,
+        ):
+            widget.setEnabled(is_cute)
+        self._ui_background_clear.setEnabled(is_cute and has_custom_image)
+        self._ui_background_crop.setEnabled(is_cute and has_image)
+
+    def _preview_ui_theme(self) -> None:
+        from ui.global_theme import UiAppearance, apply_ui_appearance
+
+        path = self._pending_ui_background_path()
+        apply_ui_appearance(
+            self,
+            UiAppearance(
+                theme=self._pending_ui_theme,
+                background_path=path if path and path.exists() else None,
+                background_opacity=self._pending_ui_background_opacity,
+                background_zoom=self._pending_ui_background_zoom,
+                background_focus_x=self._pending_ui_background_focus_x,
+                background_focus_y=self._pending_ui_background_focus_y,
+            ),
+        )
 
     def _select_theme(self, theme_id: str) -> None:
         self._pending_theme = theme_id
@@ -1612,6 +2044,10 @@ class SettingsWindow(QDialog):
     def _update_theme_btns(self) -> None:
         for tid, card in self._theme_btns.items():
             card.set_selected(tid == self._pending_theme)
+        selected = self._theme_btns.get(self._pending_theme)
+        scroll = getattr(self, "_theme_scroll", None)
+        if selected is not None and scroll is not None:
+            scroll.ensureWidgetVisible(selected, 12, 0)
 
     def _advance_theme_frame(self) -> None:
         frame_count = max(1, theme_frame_count(self._pending_theme))
@@ -1623,13 +2059,24 @@ class SettingsWindow(QDialog):
     def _start_theme_timer(self) -> None:
         selected_theme = self._pending_theme
         has_animation = theme_frame_count(selected_theme) > 1
+        reduced_motion = (
+            self._check_reduced_motion.isChecked()
+            if hasattr(self, "_check_reduced_motion")
+            else reduced_motion_enabled()
+        )
         debug_log(
             f"settings theme timer: selected_theme={selected_theme!r} "
             f"has_animated_assets={has_animation} "
             f"visible={self.isVisible()}"
         )
-        if has_animation and self.isVisible():
+        if has_animation and self.isVisible() and not reduced_motion:
             self._theme_timer.start()
+
+    def _on_reduced_motion_toggled(self, enabled: bool) -> None:
+        if enabled:
+            self._stop_theme_timer()
+        else:
+            self._start_theme_timer()
 
     def _stop_theme_timer(self) -> None:
         self._theme_timer.stop()
@@ -2271,6 +2718,26 @@ class SettingsWindow(QDialog):
     def _on_save(self) -> None:
         self._commit_current()
 
+        if self._pending_ui_background_source is not None:
+            try:
+                self._pending_ui_background = self._config.install_ui_background(
+                    self._pending_ui_background_source
+                )
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self, "Interface Background", str(exc))
+                return
+        else:
+            self._config.set_ui_background(self._pending_ui_background)
+        self._config.set_ui_theme(self._pending_ui_theme)
+        self._config.set_ui_background_opacity(
+            self._pending_ui_background_opacity
+        )
+        self._config.set_ui_background_crop(
+            self._pending_ui_background_zoom,
+            self._pending_ui_background_focus_x,
+            self._pending_ui_background_focus_y,
+        )
+
         # Hotkey
         hotkey = self._hotkey_edit.text().strip()
         if hotkey:
@@ -2278,6 +2745,7 @@ class SettingsWindow(QDialog):
 
         # Autostart
         _autostart.set_enabled(self._check_autostart.isChecked())
+        set_reduced_motion_enabled(self._check_reduced_motion.isChecked())
 
         # Theme
         self._config.set_theme(self._pending_theme)

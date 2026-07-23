@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import uuid
 from pathlib import Path
 
@@ -44,7 +45,15 @@ from core.paths import CONFIG_DIR as _CONFIG_DIR
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 _CONFIG_PATH = _CONFIG_DIR / "actions.json"
-_CONFIG_VERSION = "1.1"
+_CONFIG_VERSION = "1.3"
+
+UI_THEME_CLASSIC = "classic"
+UI_THEME_CUTE = "cute"
+UI_THEME_WOVEN = "woven_light"
+UI_THEME_IDS = {UI_THEME_CLASSIC, UI_THEME_CUTE, UI_THEME_WOVEN}
+DEFAULT_UI_BACKGROUND_OPACITY = 82
+DEFAULT_UI_BACKGROUND_ZOOM = 100
+DEFAULT_UI_BACKGROUND_FOCUS = 0.5
 
 _SETTINGS_ACTION: dict = {
     "id":          "settings",
@@ -65,6 +74,12 @@ _DEFAULTS: dict = {
     "theme": "tiger",
     "constellation": "scorpio",
     "constellation_color": "#F2760B",
+    "ui_theme": UI_THEME_CLASSIC,
+    "ui_background": "",
+    "ui_background_opacity": DEFAULT_UI_BACKGROUND_OPACITY,
+    "ui_background_zoom": DEFAULT_UI_BACKGROUND_ZOOM,
+    "ui_background_focus_x": DEFAULT_UI_BACKGROUND_FOCUS,
+    "ui_background_focus_y": DEFAULT_UI_BACKGROUND_FOCUS,
     "actions": [
         {
             "id":          "ai",
@@ -178,11 +193,26 @@ class ActionsConfig:
     def _migrate(self, data: dict) -> tuple[dict, bool]:
         """Upgrade known legacy configs without replacing user actions."""
         version = str(data.get("version", ""))
-        if version not in {"", "1.0"}:
+        if version not in {"", "1.0", "1.1", "1.2"}:
             return data, False
 
         data.setdefault("constellation", _DEFAULTS["constellation"])
         data.setdefault("constellation_color", _DEFAULTS["constellation_color"])
+        data.setdefault("ui_theme", _DEFAULTS["ui_theme"])
+        data.setdefault("ui_background", _DEFAULTS["ui_background"])
+        data.setdefault(
+            "ui_background_opacity",
+            _DEFAULTS["ui_background_opacity"],
+        )
+        data.setdefault("ui_background_zoom", _DEFAULTS["ui_background_zoom"])
+        data.setdefault(
+            "ui_background_focus_x",
+            _DEFAULTS["ui_background_focus_x"],
+        )
+        data.setdefault(
+            "ui_background_focus_y",
+            _DEFAULTS["ui_background_focus_y"],
+        )
         actions = data.setdefault("actions", [])
         if isinstance(actions, list) and not any(
             action.get("type") == "settings"
@@ -244,6 +274,85 @@ class ActionsConfig:
         from core.constellation import normalise_constellation_color
 
         self._data["constellation_color"] = normalise_constellation_color(color)
+        self._save()
+
+    def get_ui_theme(self) -> str:
+        value = str(self._data.get("ui_theme", UI_THEME_CLASSIC)).strip().lower()
+        return value if value in UI_THEME_IDS else UI_THEME_CLASSIC
+
+    def set_ui_theme(self, theme_id: str) -> None:
+        value = str(theme_id).strip().lower()
+        self._data["ui_theme"] = value if value in UI_THEME_IDS else UI_THEME_CLASSIC
+        self._save()
+
+    def get_ui_background(self) -> str:
+        return str(self._data.get("ui_background", "") or "").strip()
+
+    def set_ui_background(self, path_value: str) -> None:
+        self._data["ui_background"] = str(path_value or "").strip()
+        self._save()
+
+    def resolve_ui_background(self, path_value: str | None = None) -> Path | None:
+        raw = self.get_ui_background() if path_value is None else str(path_value or "").strip()
+        if not raw:
+            return None
+        path = Path(raw).expanduser()
+        return path if path.is_absolute() else (self._path.parent / path)
+
+    def install_ui_background(self, source: Path) -> str:
+        source = Path(source).expanduser().resolve()
+        if not source.is_file():
+            raise ValueError("The selected UI background image does not exist.")
+        suffix = source.suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg", ".bmp", ".webp"}:
+            raise ValueError("UI background must be PNG, JPG, BMP, or WEBP.")
+        background_dir = self._path.parent / "ui-backgrounds"
+        background_dir.mkdir(parents=True, exist_ok=True)
+        destination = background_dir / f"background-{uuid.uuid4().hex[:12]}{suffix}"
+        shutil.copy2(source, destination)
+        relative = destination.relative_to(self._path.parent).as_posix()
+        self.set_ui_background(relative)
+        return relative
+
+    def get_ui_background_opacity(self) -> int:
+        try:
+            value = int(self._data.get("ui_background_opacity", DEFAULT_UI_BACKGROUND_OPACITY))
+        except (TypeError, ValueError):
+            value = DEFAULT_UI_BACKGROUND_OPACITY
+        return max(15, min(100, value))
+
+    def set_ui_background_opacity(self, value: int) -> None:
+        self._data["ui_background_opacity"] = max(15, min(100, int(value)))
+        self._save()
+
+    def get_ui_background_zoom(self) -> int:
+        try:
+            value = int(self._data.get("ui_background_zoom", DEFAULT_UI_BACKGROUND_ZOOM))
+        except (TypeError, ValueError):
+            value = DEFAULT_UI_BACKGROUND_ZOOM
+        return max(100, min(400, value))
+
+    def get_ui_background_focus(self) -> tuple[float, float]:
+        def normalise(value: object) -> float:
+            try:
+                return max(0.0, min(1.0, float(value)))
+            except (TypeError, ValueError):
+                return DEFAULT_UI_BACKGROUND_FOCUS
+
+        return (
+            normalise(self._data.get("ui_background_focus_x")),
+            normalise(self._data.get("ui_background_focus_y")),
+        )
+
+    def set_ui_background_crop(
+        self,
+        zoom: int,
+        focus_x: float,
+        focus_y: float,
+    ) -> None:
+        self._data["ui_background_zoom"] = max(100, min(400, int(zoom)))
+        self._data["ui_background_focus_x"] = max(0.0, min(1.0, float(focus_x)))
+        self._data["ui_background_focus_y"] = max(0.0, min(1.0, float(focus_y)))
         self._save()
 
     # ── Actions → MenuItem tree ───────────────────────────────────────────────

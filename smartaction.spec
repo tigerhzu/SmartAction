@@ -50,6 +50,7 @@ def collect_public_docs() -> list[tuple[str, str]]:
         "help.md",
         "quick-start.md",
         "help-center.md",
+        "ui-themes.md",
         "client-workspace.md",
         "firefox-container-helper.md",
         "firefox-helper-signing.md",
