@@ -39,6 +39,6 @@ if errorlevel 1 (
 )
 
 echo.
-echo Release package: %CD%\dist\SmartAction-Release-v1.2.0
+echo Release package: %CD%\dist\SmartAction-Release-v1.3.0
 echo.
 exit /b 0

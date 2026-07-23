@@ -51,8 +51,6 @@ from core.theme import DEFAULT_THEME, THEMES
 from ui.style_tokens import (
     ASH,
     BONE,
-    CHARCOAL,
-    EMBER,
     EMBER_HOVER,
     FOG,
     HEADLINE_FONT_FAMILY,
@@ -60,9 +58,13 @@ from ui.style_tokens import (
     RING_LABEL_BG,
     RING_LABEL_EDGE,
     STEEL,
-    VOID,
 )
-from ui.theme_painter import draw_energy_bubble, preload_theme_assets, theme_frame_count
+from ui.motion_preferences import reduced_motion_enabled
+from ui.theme_painter import theme_frame_count
+from ui.theme_renderer import (
+    ThemeInteraction,
+    theme_renderer,
+)
 
 if TYPE_CHECKING:
     from core.menu_model import MenuItem
@@ -117,6 +119,21 @@ def _abbrev(label: str) -> str:
     return label[:2].upper()
 
 
+def _cut_corner_path(rect: QRectF, cut: float) -> QPainterPath:
+    """Return a precise chamfered plaque path used by action labels."""
+    path = QPainterPath()
+    path.moveTo(rect.left() + cut, rect.top())
+    path.lineTo(rect.right() - cut, rect.top())
+    path.lineTo(rect.right(), rect.top() + cut)
+    path.lineTo(rect.right(), rect.bottom() - cut)
+    path.lineTo(rect.right() - cut, rect.bottom())
+    path.lineTo(rect.left() + cut, rect.bottom())
+    path.lineTo(rect.left(), rect.bottom() - cut)
+    path.lineTo(rect.left(), rect.top() + cut)
+    path.closeSubpath()
+    return path
+
+
 # ── Ring window ───────────────────────────────────────────────────────────────
 
 class RingWindow(QWidget):
@@ -153,6 +170,13 @@ class RingWindow(QWidget):
         self._drag_start_pos = QPointF()
         self._drag_last_angle: float = 0.0
         self._ring_drag_active: bool = False
+        self._pressed_slot: int = -1
+        self._click_slot: int = -1
+        self._click_progress: float = 0.0
+        self._pending_activation: MenuItem | None = None
+        self._pointer_ring_pos = QPointF(WINDOW_SIZE / 2, WINDOW_SIZE / 2)
+        self._slot_hover_progress = [0.0] * MAX_DIRECT_SLOTS
+        self._reduced_motion = reduced_motion_enabled()
 
         self._setup_window()
         self._build_fonts()
@@ -192,6 +216,7 @@ class RingWindow(QWidget):
 
     def _apply_theme(self, theme_id: str) -> None:
         self._theme_id = theme_id
+        self._theme_renderer = theme_renderer(theme_id)
         self._theme_frame = 0
         t = THEMES.get(theme_id, THEMES[DEFAULT_THEME])
 
@@ -248,9 +273,17 @@ class RingWindow(QWidget):
         self._anim_nav.setEasingCurve(QEasingCurve.Type.OutQuad)
         self._anim_nav.valueChanged.connect(self._apply_scale)
 
+        self._anim_click = QVariantAnimation(self)
+        self._anim_click.setDuration(150)
+        self._anim_click.setStartValue(0.0)
+        self._anim_click.setEndValue(1.0)
+        self._anim_click.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._anim_click.valueChanged.connect(self._apply_click_progress)
+        self._anim_click.finished.connect(self._finish_click_feedback)
+
     def _build_theme_timer(self) -> None:
         self._theme_timer = QTimer(self)
-        self._theme_timer.setInterval(100)
+        self._theme_timer.setInterval(16)
         self._theme_timer.timeout.connect(self._advance_theme_frame)
 
     def _advance_theme_frame(self) -> None:
@@ -258,9 +291,15 @@ class RingWindow(QWidget):
         if count <= 1:
             self._theme_timer.stop()
             return
-        # Ten repaints per second is smooth enough at the ring's small size.
-        # Step two source frames at a time to retain the original animation pace.
-        self._theme_frame = (self._theme_frame + 2) % count
+        for index, amount in enumerate(self._slot_hover_progress):
+            target = 1.0 if index == self._hovered_slot else 0.0
+            rate = 0.24 if target > amount else 0.065
+            if abs(target - amount) <= rate:
+                self._slot_hover_progress[index] = target
+            else:
+                direction = 1.0 if target > amount else -1.0
+                self._slot_hover_progress[index] = amount + direction * rate
+        self._theme_frame = (self._theme_frame + 1) % count
         if self.isVisible():
             self._update_ring()
 
@@ -270,7 +309,7 @@ class RingWindow(QWidget):
             f"ring theme timer: theme_id={getattr(self, '_theme_id', DEFAULT_THEME)!r} "
             f"frame_count={count} visible={self.isVisible()}"
         )
-        if count > 1 and self.isVisible():
+        if count > 1 and self.isVisible() and not self._reduced_motion:
             self._theme_timer.start()
 
     def _stop_theme_timer(self) -> None:
@@ -279,6 +318,39 @@ class RingWindow(QWidget):
     def _apply_scale(self, value: object) -> None:
         self._scale = float(value)  # type: ignore[arg-type]
         self._update_ring()
+
+    def _apply_click_progress(self, value: object) -> None:
+        self._click_progress = float(value)  # type: ignore[arg-type]
+        self._update_ring()
+
+    def _stop_click_feedback(self) -> None:
+        self._anim_click.stop()
+        self._pressed_slot = -1
+        self._click_slot = -1
+        self._click_progress = 0.0
+        self._pending_activation = None
+
+    def _begin_click_feedback(self, slot: int, item: MenuItem) -> None:
+        self._pressed_slot = -1
+        if self._reduced_motion:
+            self._drill_into(item)
+            return
+        self._click_slot = slot
+        self._click_progress = 0.0
+        self._pending_activation = item
+        self._anim_click.stop()
+        self._anim_click.setStartValue(0.0)
+        self._anim_click.setEndValue(1.0)
+        self._anim_click.start()
+        self._update_ring()
+
+    def _finish_click_feedback(self) -> None:
+        item = self._pending_activation
+        self._click_slot = -1
+        self._click_progress = 0.0
+        self._pending_activation = None
+        if item is not None:
+            self._drill_into(item)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -291,8 +363,8 @@ class RingWindow(QWidget):
     ) -> None:
         debug_log("show_ring called")
         debug_log(f"ring show requested: items={len(items)} theme_id={theme_id!r}")
+        self._reduced_motion = reduced_motion_enabled()
         self._reset_show_state()
-        preload_theme_assets(theme_id)
         self._apply_theme(theme_id)
         self._apply_constellation(constellation_id, constellation_color)
         self._nav_stack = [items]
@@ -300,12 +372,16 @@ class RingWindow(QWidget):
         self._position_at_cursor()
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
 
-        self.setWindowOpacity(0.0)
-        self._scale = 0.80
-        self._anim_opacity.setStartValue(0.0)
-        self._anim_opacity.setEndValue(1.0)
-        self._anim_scale.setStartValue(0.80)
-        self._anim_scale.setEndValue(1.0)
+        if self._reduced_motion:
+            self.setWindowOpacity(1.0)
+            self._scale = 1.0
+        else:
+            self.setWindowOpacity(0.0)
+            self._scale = 0.80
+            self._anim_opacity.setStartValue(0.0)
+            self._anim_opacity.setEndValue(1.0)
+            self._anim_scale.setStartValue(0.80)
+            self._anim_scale.setEndValue(1.0)
 
         self._log_overlay_state("show_ring before show")
         self.show()
@@ -314,7 +390,8 @@ class RingWindow(QWidget):
         self.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
         self._log_overlay_state("show_ring after show")
         self._start_theme_timer()
-        self._anim_open.start()
+        if not self._reduced_motion:
+            self._anim_open.start()
         debug_log("outside_click_enabled scheduled")
         QTimer.singleShot(150, self._enable_outside_click)
 
@@ -339,6 +416,7 @@ class RingWindow(QWidget):
         self._reset_hover()
         self._anim_open.stop()
         self._anim_nav.stop()
+        self._stop_click_feedback()
         self._stop_theme_timer()
         self.hide()
         self._is_dismissing = False
@@ -363,6 +441,8 @@ class RingWindow(QWidget):
         self._ignore_next_click = False
         self._active_action = None
         self._rotation_angle = 0.0
+        self._slot_hover_progress = [0.0] * MAX_DIRECT_SLOTS
+        self._stop_click_feedback()
         self._cancel_ring_drag()
         self._reset_hover()
         debug_log(
@@ -410,14 +490,43 @@ class RingWindow(QWidget):
 
     def _play_nav(self) -> None:
         self._anim_open.stop()
-        self._anim_nav.setStartValue(0.88)
-        self._anim_nav.setEndValue(1.0)
-        self._anim_nav.start()
+        if self._reduced_motion:
+            self._scale = 1.0
+        else:
+            self._anim_nav.setStartValue(0.88)
+            self._anim_nav.setEndValue(1.0)
+            self._anim_nav.start()
         self._update_ring()
 
     def _reset_hover(self) -> None:
         self._hovered_slot = -1
         self._center_hovered = False
+
+    def _interaction_state(
+        self,
+        cx: float,
+        cy: float,
+        *,
+        hovered: bool = False,
+        hover_progress: float | None = None,
+        pressed: bool = False,
+        click_progress: float = 0.0,
+    ) -> ThemeInteraction:
+        radius = max(1.0, float(ITEM_RADIUS))
+        return ThemeInteraction(
+            frame_index=self._theme_frame,
+            hovered=hovered,
+            hover_progress=(
+                float(hovered)
+                if self._reduced_motion or hover_progress is None
+                else max(0.0, min(1.0, hover_progress))
+            ),
+            pressed=pressed,
+            click_progress=click_progress,
+            pointer_offset_x=(self._pointer_ring_pos.x() - cx) / radius,
+            pointer_offset_y=(self._pointer_ring_pos.y() - cy) / radius,
+            reduced_motion=self._reduced_motion,
+        )
 
     @property
     def _current_items(self) -> list[MenuItem]:
@@ -591,6 +700,9 @@ class RingWindow(QWidget):
                 self._drag_start_pos = QPointF(pos)
                 self._drag_last_angle = self._angle_from_centre(pos)
                 self._ring_drag_active = False
+                self._pressed_slot = idx
+                self._pointer_ring_pos = QPointF(pos)
+                self._update_ring()
                 debug_log(f"ring slot press pending: slot={idx}")
                 event.accept()
                 return
@@ -604,12 +716,14 @@ class RingWindow(QWidget):
         pos = event.position()
         if self._drag_slot != -1 and event.buttons() & Qt.MouseButton.LeftButton:
             ring_pos = self._overlay_to_ring_pos(pos)
+            self._pointer_ring_pos = QPointF(ring_pos)
             moved = math.hypot(
                 ring_pos.x() - self._drag_start_pos.x(),
                 ring_pos.y() - self._drag_start_pos.y(),
             )
             if not self._ring_drag_active and moved >= _DRAG_THRESHOLD:
                 self._ring_drag_active = True
+                self._pressed_slot = -1
                 self.setCursor(Qt.CursorShape.ClosedHandCursor)
                 debug_log(f"ring rotation started: slot={self._drag_slot}")
 
@@ -636,6 +750,7 @@ class RingWindow(QWidget):
             super().mouseMoveEvent(event)
             return
         pos      = self._overlay_to_ring_pos(pos)
+        self._pointer_ring_pos = QPointF(pos)
         on_ctr   = self._hit_centre(pos)
         new_slot = -1 if on_ctr else self._hit_slot(pos)
         if new_slot != self._hovered_slot or on_ctr != self._center_hovered:
@@ -652,6 +767,7 @@ class RingWindow(QWidget):
         if event.button() == Qt.MouseButton.LeftButton and self._drag_slot != -1:
             pressed_slot = self._drag_slot
             was_dragging = self._ring_drag_active
+            self._pressed_slot = -1
             self._cancel_ring_drag()
 
             if was_dragging:
@@ -664,7 +780,12 @@ class RingWindow(QWidget):
                 released_slot = self._hit_slot(ring_pos)
                 if released_slot == pressed_slot and pressed_slot < len(self._current_items):
                     debug_log(f"ring slot clicked: slot={pressed_slot}")
-                    self._drill_into(self._current_items[pressed_slot])
+                    self._begin_click_feedback(
+                        pressed_slot,
+                        self._current_items[pressed_slot],
+                    )
+                else:
+                    self._update_ring()
 
             event.accept()
             return
@@ -683,6 +804,7 @@ class RingWindow(QWidget):
         self._ignore_next_click = False
         self._active_action = None
         self._cancel_ring_drag()
+        self._stop_click_feedback()
         self._stop_theme_timer()
         debug_log(
             "hideEvent reset completed: "
@@ -736,41 +858,34 @@ class RingWindow(QWidget):
         p.setBrush(QBrush(halo))
         p.drawEllipse(QPointF(c, c), ITEM_ORBIT + 86, ITEM_ORBIT + 86)
 
+        scene_state = self._interaction_state(c, c)
+        self._theme_renderer.draw_background(
+            p,
+            c,
+            c,
+            ITEM_ORBIT,
+            scene_state,
+        )
         self._draw_star_field(p, c, accent)
         self._draw_constellation(p, c, QColor(self._constellation_color))
 
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        for radius, alpha, width in (
-            (ITEM_ORBIT - 38, 22, 0.8),
-            (ITEM_ORBIT, 44, 1.0),
-            (ITEM_ORBIT + 38, 18, 0.8),
-        ):
-            pen = QPen(QColor(NEON_CYAN))
-            pen.setWidthF(width)
-            pen.setColor(QColor(pen.color().red(), pen.color().green(), pen.color().blue(), alpha))
-            p.setPen(pen)
-            p.drawEllipse(QPointF(c, c), radius, radius)
+        self._theme_renderer.draw_guides(
+            p,
+            c,
+            c,
+            ITEM_ORBIT,
+            self._slot_count(),
+            self._rotation_angle,
+            scene_state,
+        )
 
-        tick_pen = QPen(QColor(EMBER))
-        tick_pen.setWidthF(1.1)
-        tick_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        tick_color = QColor(EMBER)
-        tick_color.setAlpha(70)
-        tick_pen.setColor(tick_color)
-        p.setPen(tick_pen)
-        slot_count = self._slot_count()
-        for i in range(slot_count):
-            angle = 2 * math.pi * i / slot_count - math.pi / 2 + self._rotation_angle
-            inner = ITEM_ORBIT - 46
-            outer = ITEM_ORBIT - 34
-            p.drawLine(
-                QLineF(
-                    c + math.cos(angle) * inner,
-                    c + math.sin(angle) * inner,
-                    c + math.cos(angle) * outer,
-                    c + math.sin(angle) * outer,
-                )
-            )
+        self._theme_renderer.draw_orbit(
+            p,
+            c,
+            c,
+            ITEM_ORBIT + 51.0,
+            scene_state,
+        )
         p.setPen(Qt.PenStyle.NoPen)
 
     def _draw_star_field(self, p: QPainter, c: float, accent: QColor) -> None:
@@ -819,6 +934,12 @@ class RingWindow(QWidget):
             p.setBrush(QColor(238, 246, 255, int(150 + brightness * 95)))
             core_radius = 0.85 + brightness * 0.85
             p.drawEllipse(point, core_radius, core_radius)
+        self._theme_renderer.draw_constellation_accents(
+            p,
+            points,
+            data["links"],
+            self._interaction_state(c, c),
+        )
 
     # ── Slot decorations (theme textures) ────────────────────────────────────
 
@@ -833,10 +954,13 @@ class RingWindow(QWidget):
                 continue
             sx, sy = self._slot_centre(i)
             r = float(ITEM_RADIUS)
-            shadow = QColor(self._c_shadow)
-            shadow.setAlpha(min(150, max(70, shadow.alpha())))
-            p.setBrush(shadow)
-            p.drawEllipse(QPointF(sx, sy + 6), r + 5, r + 5)
+            self._theme_renderer.draw_shadow(
+                p,
+                sx,
+                sy,
+                r,
+                QColor(self._c_shadow),
+            )
         p.setBrush(Qt.BrushStyle.NoBrush)
 
     # ── Slot pass ─────────────────────────────────────────────────────────────
@@ -847,12 +971,13 @@ class RingWindow(QWidget):
             sx, sy = self._slot_centre(i)
             item   = items[i] if i < len(items) else None
             hov    = (i == self._hovered_slot)
-            self._draw_one_slot(p, c, sx, sy, item, hov)
+            self._draw_one_slot(p, c, i, sx, sy, item, hov)
 
     def _draw_one_slot(
         self,
         p: QPainter,
         c: float,
+        slot_index: int,
         sx: float,
         sy: float,
         item: MenuItem | None,
@@ -877,28 +1002,60 @@ class RingWindow(QWidget):
         fill = (self._c_folder_h if hovered else self._c_folder) if is_folder \
                else (self._c_slot_h if hovered else self._c_slot)
 
-        inner_fill = QColor(fill.red(), fill.green(), fill.blue(), 210 if hovered else 190)
-        draw_energy_bubble(
-            p,
+        state = self._interaction_state(
             sx,
             sy,
-            r + (1.8 if hovered else 0.6),
-            getattr(self, "_theme_id", DEFAULT_THEME),
-            selected=hovered,
             hovered=hovered,
-            rim_width=9.0 if hovered else 8.0,
-            inner_fill=inner_fill,
-            frame_index=self._theme_frame,
+            hover_progress=self._slot_hover_progress[slot_index],
+            pressed=self._pressed_slot == slot_index,
+            click_progress=(
+                self._click_progress
+                if self._click_slot == slot_index
+                else 0.0
+            ),
+        )
+        inner_fill = QColor(
+            fill.red(),
+            fill.green(),
+            fill.blue(),
+            210 if hovered else 190,
+        )
+        content_offset = self._theme_renderer.content_offset(state)
+        visual_sx = sx + content_offset.x()
+        visual_sy = sy + content_offset.y()
+        self._theme_renderer.draw_button(
+            p,
+            visual_sx,
+            visual_sy,
+            r + 0.6,
+            inner_fill,
+            state,
         )
 
         p.setPen(Qt.PenStyle.NoPen)
 
         # Icon / emoji (large font) or abbreviation (small bold font)
         abbrev = item.icon or item.short_label or _abbrev(item.label)
-        p.setFont(self._font_emoji if _is_emoji(abbrev) else self._font_abbrev)
+        content_font = (
+            self._font_emoji if _is_emoji(abbrev) else self._font_abbrev
+        )
+        content_rect = QRectF(
+            visual_sx - r + 1,
+            visual_sy - r + 1,
+            (r - 1) * 2,
+            (r - 1) * 2,
+        )
+        self._theme_renderer.draw_content_echo(
+            p,
+            content_rect,
+            abbrev,
+            content_font,
+            state,
+        )
+        p.setFont(content_font)
         p.setPen(_C_ABBREV)
         p.drawText(
-            QRectF(sx - r + 1, sy - r + 1, (r - 1) * 2, (r - 1) * 2),
+            content_rect,
             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
             abbrev,
         )
@@ -906,8 +1063,8 @@ class RingWindow(QWidget):
         # Folder chevron › in lower-right quadrant
         if is_folder:
             cr_r = 12.0
-            crx  = sx + r * 0.52 - cr_r / 2
-            cry  = sy + r * 0.52 - cr_r / 2
+            crx  = visual_sx + r * 0.52 - cr_r / 2
+            cry  = visual_sy + r * 0.52 - cr_r / 2
             badge = QPainterPath()
             badge.addEllipse(crx, cry, cr_r, cr_r)
             p.fillPath(badge, QColor(RING_LABEL_BG))
@@ -944,36 +1101,53 @@ class RingWindow(QWidget):
         rect = self._label_card_rect(c, sx, sy, label)
         x0, y0 = rect.left(), rect.top()
         card_w = rect.width()
-        text_w = card_w - _LABEL_PADX * 2 - 6
 
-        shadow = QPainterPath()
-        shadow.addRoundedRect(x0, y0 + 3, card_w, _LABEL_H, _LABEL_R, _LABEL_R)
+        shadow_rect = rect.translated(0.0, 3.0)
+        shadow = _cut_corner_path(shadow_rect, 7.0)
         p.setPen(Qt.PenStyle.NoPen)
-        p.fillPath(shadow, QColor(0, 0, 0, 130))
+        p.fillPath(shadow, QColor(0, 0, 0, 168))
 
-        card = QPainterPath()
-        card.addRoundedRect(x0, y0, card_w, _LABEL_H, _LABEL_R, _LABEL_R)
-        fill = QLinearGradient(x0, y0, x0 + card_w, y0 + _LABEL_H)
-        fill.setColorAt(0.0, QColor(RING_LABEL_BG))
-        fill.setColorAt(0.58, QColor(CHARCOAL))
-        fill.setColorAt(1.0, QColor(VOID))
+        card = _cut_corner_path(rect, 7.0)
+        fill = QLinearGradient(x0, y0, x0, y0 + _LABEL_H)
+        fill.setColorAt(0.0, QColor(25, 29, 38, 248))
+        fill.setColorAt(0.48, QColor(RING_LABEL_BG))
+        fill.setColorAt(1.0, QColor(4, 6, 10, 252))
         p.fillPath(card, QBrush(fill))
 
-        edge = QColor(EMBER_HOVER if hovered else RING_LABEL_EDGE)
-        edge.setAlpha(210 if hovered else 150)
+        accent = QColor(self._c_glow)
+        edge = QColor(accent if hovered else QColor(RING_LABEL_EDGE))
+        edge.setAlpha(225 if hovered else 150)
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(edge, 1.1 if hovered else 0.9))
+        p.setPen(QPen(edge, 1.15 if hovered else 0.85))
         p.drawPath(card)
 
-        accent = QColor(EMBER if hovered else ASH)
-        accent.setAlpha(225 if hovered else 120)
-        p.setPen(QPen(accent, 2.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        p.drawLine(QLineF(x0 + 5, y0 + 7, x0 + 5, y0 + _LABEL_H - 7))
+        inner_rect = rect.adjusted(3.0, 3.0, -3.0, -3.0)
+        inner_edge = QColor(accent)
+        inner_edge.setAlpha(82 if hovered else 38)
+        p.setPen(QPen(inner_edge, 0.65))
+        p.drawPath(_cut_corner_path(inner_rect, 4.0))
 
-        p.setPen(QColor(BONE if hovered else FOG))
+        # Tiny engraved corner marks add detail without competing with text.
+        marker = QColor(accent)
+        marker.setAlpha(185 if hovered else 88)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(marker)
+        marker_r = 1.15
+        for mx in (x0 + 8.5, x0 + card_w - 8.5):
+            diamond = QPainterPath()
+            diamond.moveTo(mx, y0 + _LABEL_H / 2 - marker_r)
+            diamond.lineTo(mx + marker_r, y0 + _LABEL_H / 2)
+            diamond.lineTo(mx, y0 + _LABEL_H / 2 + marker_r)
+            diamond.lineTo(mx - marker_r, y0 + _LABEL_H / 2)
+            diamond.closeSubpath()
+            p.fillPath(diamond, marker)
+
+        text_color = QColor(BONE if hovered else FOG)
+        text_color.setAlpha(255 if hovered else 236)
+        p.setPen(text_color)
         p.drawText(
-            QRectF(x0 + _LABEL_PADX + 4, y0, text_w, _LABEL_H),
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            rect.adjusted(_LABEL_PADX, 0.0, -_LABEL_PADX, 0.0),
+            Qt.AlignmentFlag.AlignCenter,
             label,
         )
 
@@ -983,34 +1157,19 @@ class RingWindow(QWidget):
         is_back = self._depth > 1
         hov     = self._center_hovered
 
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(0, 0, 0, 130))
-        p.drawEllipse(QPointF(c, c + 3),
-                      float(CENTER_RADIUS + 5), float(CENTER_RADIUS + 5))
-
         if hov:
             fill = self._c_center_b if is_back else self._c_center_x
         else:
             fill = self._c_center
-        btn_path = QPainterPath()
-        btn_path.addEllipse(c - CENTER_RADIUS, c - CENTER_RADIUS,
-                            CENTER_RADIUS * 2, CENTER_RADIUS * 2)
-        core = QRadialGradient(c - 4, c - 5, CENTER_RADIUS * 1.65)
-        core.setColorAt(0.0, QColor(STEEL if hov else CHARCOAL))
-        core.setColorAt(0.62, QColor(fill))
-        core.setColorAt(1.0, QColor(VOID))
-        p.fillPath(btn_path, QBrush(core))
 
-        pulse = QColor(EMBER_HOVER if hov else EMBER)
-        pulse.setAlpha(170 if hov else 95)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(pulse, 1.5 if hov else 1.0))
-        p.drawEllipse(QPointF(c, c), CENTER_RADIUS + 3, CENTER_RADIUS + 3)
-
-        glass = QColor(NEON_CYAN if hov else BONE)
-        glass.setAlpha(95 if hov else 42)
-        p.setPen(QPen(glass, 0.9))
-        p.drawEllipse(QPointF(c, c), CENTER_RADIUS - 3, CENTER_RADIUS - 3)
+        self._theme_renderer.draw_center(
+            p,
+            c,
+            c,
+            float(CENTER_RADIUS),
+            QColor(fill),
+            self._interaction_state(c, c, hovered=hov),
+        )
 
         ir   = CENTER_RADIUS * 0.40
         pw   = 2.0

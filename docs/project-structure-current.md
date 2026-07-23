@@ -18,12 +18,13 @@ radial ring, Settings, PowerShell Library, Client Workspace, and helper dialogs.
 | --- | --- |
 | `app/` | Entry point and application lifecycle |
 | `core/` | Config, action dispatch, native hotkey orchestration, profiles, PowerShell and client-workspace logic |
-| `ui/` | Live PySide6 windows, dialogs, widgets, theme painting and ring UI |
+| `ui/` | Live PySide6 windows, dialogs, widgets, ring geometry, and modular theme renderers |
 | `platforms/windows.py` | Windows `RegisterHotKey` backend |
 | `config/actions.json` | Active hotkey, theme and radial action tree |
 | `data/` | PowerShell library, client workspaces and Emoji picker data |
 | `resources/config.json` | Small legacy/startup setting store |
 | `assets/themes/` | Optimized theme animation frames and card backgrounds |
+| `assets/ui/` | Bundled global-interface artwork, including the Cute default background |
 | `assets/startup/` | Optional lightweight PNG/JPG/GIF startup media; disabled by default |
 | `docs/` | User and developer documentation |
 | `extensions/` | Firefox helper extension source |
@@ -41,9 +42,16 @@ and ignored by Git.
 - The active theme caches all animation frames; inactive Settings cards cache
   only their first frame.
 - Closing Settings releases decoded assets for themes that are no longer active.
-- Ring animation uses about 10 FPS and repaints only the ring rectangle, not the
-  full screen. The ring itself is a compact `Qt.Popup`, so outside-click
+- Ring animation targets 60 FPS and repaints only the compact ring rectangle,
+  not the full screen. The ring itself is a `Qt.Popup`, so outside-click
   dismissal does not require a screen-sized backing buffer.
+- `ui/theme_renderer.py` owns each theme's visual DNA: background accents,
+  orbit silhouette, button material, hover response, and click feedback.
+  `ui/ring_ui.py` owns geometry and input only.
+- Reduced motion can be enabled in Settings. It disables continuous theme,
+  opening, navigation, hover, and click animation without changing the action
+  data structure. The environment override is
+  `SMARTACTION_REDUCED_MOTION=1`.
 - Settings animates only the selected theme preview at about 12 FPS.
 - Emoji cells are created in batches and skin-tone duplicates are excluded.
 - The ring's twelve constellation backgrounds are drawn with QPainter, so they
