@@ -63,7 +63,13 @@ def parameter_summary(values: dict[str, str], parameters: list[dict[str, Any]]) 
     return "\n".join(lines)
 
 
-def run_powershell_script(script_content: str, values: dict[str, str], parameters: list[dict[str, Any]]) -> PowerShellRunResult:
+def run_powershell_script(
+    script_content: str,
+    values: dict[str, str],
+    parameters: list[dict[str, Any]],
+    *,
+    timeout_seconds: float = 300,
+) -> PowerShellRunResult:
     command = render_script(script_content, values)
     start = time.perf_counter()
     try:
@@ -78,7 +84,7 @@ def run_powershell_script(script_content: str, values: dict[str, str], parameter
             ],
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=timeout_seconds,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
         duration = time.perf_counter() - start
@@ -109,15 +115,15 @@ def run_powershell_script(script_content: str, values: dict[str, str], parameter
             friendly_error="PowerShell could not be found on this system.",
         )
     except subprocess.TimeoutExpired as exc:
-        stdout = mask_secret_values(exc.stdout or "", values, parameters)
-        stderr = mask_secret_values(exc.stderr or "", values, parameters)
+        stdout = mask_secret_values(_output_text(exc.stdout), values, parameters)
+        stderr = mask_secret_values(_output_text(exc.stderr), values, parameters)
         return PowerShellRunResult(
             success=False,
             stdout=stdout,
             stderr=stderr,
             exit_code=None,
             duration_seconds=time.perf_counter() - start,
-            friendly_error="The script timed out after 300 seconds.",
+            friendly_error=f"The script timed out after {timeout_seconds:g} seconds.",
         )
     except Exception as exc:
         return PowerShellRunResult(
@@ -128,3 +134,11 @@ def run_powershell_script(script_content: str, values: dict[str, str], parameter
             duration_seconds=time.perf_counter() - start,
             friendly_error="The script could not be executed. Check the script content and try again.",
         )
+
+
+def _output_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    return value

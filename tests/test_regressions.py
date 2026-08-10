@@ -30,7 +30,6 @@ from core.actions_config import (
 )
 from core.client_workspace import (
     WORKSPACE_VERSION,
-    ClientWorkspaceStore,
     validate_workspace_data,
 )
 from core.constellation import (
@@ -49,8 +48,6 @@ from platforms.windows import (
     MOD_SHIFT,
     parse_hotkey,
 )
-from tools.build_emoji_database import parse_emoji_test
-from ui.emoji_picker import CATALOG
 from ui.ring_ui import RingWindow, WINDOW_SIZE
 from ui.theme_painter import (
     draw_energy_bubble,
@@ -74,29 +71,6 @@ class HotkeyRegressionTests(unittest.TestCase):
         for combo in ("ctrl+alt", "ctrl+a+b", "ctrl+pageup"):
             with self.subTest(combo=combo), self.assertRaises(ValueError):
                 parse_hotkey(combo)
-
-
-class EmojiRegressionTests(unittest.TestCase):
-    def test_builder_and_runtime_catalog_drop_skin_tone_variants(self) -> None:
-        wave = "\U0001F44B"
-        light = "\U0001F3FB"
-        dark = "\U0001F3FF"
-        sample = f"""
-# group: People & Body
-# subgroup: hand-fingers-open
-1F44B       ; fully-qualified # {wave} E0.6 waving hand
-1F44B 1F3FB ; fully-qualified # {wave}{light} E1.0 waving hand: light skin tone
-1F44B 1F3FF ; fully-qualified # {wave}{dark} E1.0 waving hand: dark skin tone
-"""
-        parsed = parse_emoji_test(sample)
-        self.assertEqual([item["icon"] for item in parsed], [wave])
-        self.assertFalse(
-            any(
-                0x1F3FB <= ord(char) <= 0x1F3FF
-                for item in CATALOG
-                for char in item.icon
-            )
-        )
 
 
 class ConstellationAndSettingsActionTests(unittest.TestCase):
@@ -187,125 +161,10 @@ class ConstellationAndSettingsActionTests(unittest.TestCase):
                 1,
             )
 
-    def test_settings_selector_saves_constellation(self) -> None:
-        from ui.settings_window import SettingsWindow
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = ActionsConfig(Path(temp_dir) / "actions.json")
-            window = SettingsWindow(config)
-            index = window._constellation_combo.findData("sagittarius")
-            ui_index = window._ui_theme_combo.findData(UI_THEME_CUTE)
-            woven_index = window._ui_theme_combo.findData(UI_THEME_WOVEN)
-            self.assertGreaterEqual(index, 0)
-            self.assertGreaterEqual(ui_index, 0)
-            self.assertGreaterEqual(woven_index, 0)
-            self.assertGreaterEqual(window._combo_type.findText("Settings"), 0)
-            self.assertEqual(set(window._theme_btns), set(THEME_ORDER))
-            window._constellation_combo.setCurrentIndex(index)
-            window._select_theme("halloween")
-            window._pending_constellation_color = "#22CCFF"
-            window._ui_theme_combo.setCurrentIndex(ui_index)
-            window._ui_opacity_slider.setValue(68)
-            with patch("ui.settings_window._autostart.set_enabled"):
-                window._on_save()
-            self.assertEqual(config.get_constellation(), "sagittarius")
-            self.assertEqual(config.get_theme(), "halloween")
-            self.assertEqual(config.get_constellation_color(), "#22CCFF")
-            self.assertEqual(config.get_ui_theme(), UI_THEME_CUTE)
-            self.assertEqual(config.get_ui_background_opacity(), 68)
-            window.close()
-
-
 class GlobalUiThemeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
-
-    def test_settings_interface_selector_previews_immediately_without_button(
-        self,
-    ) -> None:
-        from ui.settings_window import SettingsWindow
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = ActionsConfig(Path(temp_dir) / "actions.json")
-            window = SettingsWindow(config)
-            self.assertFalse(
-                any(
-                    button.text() == "Preview"
-                    for button in window.findChildren(QPushButton)
-                )
-            )
-
-            woven_index = window._ui_theme_combo.findData(UI_THEME_WOVEN)
-            window._ui_theme_combo.setCurrentIndex(woven_index)
-            self.assertEqual(window._pending_ui_theme, UI_THEME_WOVEN)
-            self.assertIn(
-                "smartaction-woven-light-ui",
-                window.styleSheet(),
-            )
-
-            classic_index = window._ui_theme_combo.findData(UI_THEME_CLASSIC)
-            window._ui_theme_combo.setCurrentIndex(classic_index)
-            self.assertEqual(window._pending_ui_theme, UI_THEME_CLASSIC)
-            self.assertNotIn(
-                "smartaction-woven-light-ui",
-                window.styleSheet(),
-            )
-            self.assertEqual(config.get_ui_theme(), UI_THEME_CLASSIC)
-            window.close()
-
-    def test_theme_card_labels_keep_contrast_on_light_backgrounds(self) -> None:
-        from ui.settings_window import _ThemeCard
-
-        card = _ThemeCard("sakura", THEMES["sakura"])
-        image = QImage(
-            card.size(),
-            QImage.Format.Format_ARGB32_Premultiplied,
-        )
-        image.fill(QColor(0, 0, 0, 0))
-        card.render(image)
-
-        label_backing = image.pixelColor(8, 84)
-        label_text = image.pixelColor(card.width() // 2, 84)
-        self.assertGreaterEqual(label_backing.alpha(), 210)
-        self.assertLess(label_backing.lightness(), 45)
-        self.assertGreaterEqual(label_text.lightness(), 220)
-        card.close()
-
-    def test_settings_cute_surface_is_deeper_than_utility_panels(self) -> None:
-        from ui.global_theme import UiAppearance, apply_ui_appearance
-        from ui.settings_window import SettingsWindow
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config = ActionsConfig(Path(temp_dir) / "actions.json")
-            settings = SettingsWindow(config)
-            apply_ui_appearance(
-                settings,
-                UiAppearance(theme=UI_THEME_CUTE),
-            )
-            settings_surface = settings._right_stack.widget(0)
-            self.assertIn(
-                "background: rgba(246, 226, 236, 148)",
-                settings_surface.styleSheet(),
-            )
-
-            utility = QDialog()
-            utility_surface = QWidget(utility)
-            utility_surface.setStyleSheet("background: transparent;")
-            apply_ui_appearance(
-                utility,
-                UiAppearance(theme=UI_THEME_CUTE),
-            )
-            self.assertIn(
-                "background: rgba(255, 247, 250, 225)",
-                utility_surface.styleSheet(),
-            )
-            self.assertNotIn(
-                "rgba(246, 226, 236, 148)",
-                utility_surface.styleSheet(),
-            )
-            settings.close()
-            utility.close()
 
     def test_ui_theme_config_and_background_install(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -339,7 +198,6 @@ class GlobalUiThemeTests(unittest.TestCase):
             appearance_from_config,
             default_cute_background_path,
         )
-        from ui.settings_window import SettingsWindow
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -362,16 +220,6 @@ class GlobalUiThemeTests(unittest.TestCase):
             self.assertEqual(appearance.background_path, bundled)
             self.assertEqual(config.get_ui_background(), "")
 
-            window = SettingsWindow(config)
-            self.assertEqual(window._pending_ui_background_path(), bundled)
-            self.assertEqual(
-                window._ui_background_edit.text(),
-                "Built-in Cute background",
-            )
-            self.assertFalse(window._ui_background_clear.isEnabled())
-            self.assertTrue(window._ui_background_crop.isEnabled())
-            window.close()
-
             custom = root / "custom.png"
             custom_image = QImage(16, 16, QImage.Format.Format_ARGB32)
             custom_image.fill(QColor("#334455"))
@@ -382,7 +230,7 @@ class GlobalUiThemeTests(unittest.TestCase):
                 config.resolve_ui_background(),
             )
 
-    def test_tray_logo_matches_the_global_interface_theme(self) -> None:
+    def test_tray_logo_uses_the_control_center_brand_image(self) -> None:
         from ui.tray_icon import TrayIcon, _make_icon
 
         signatures = []
@@ -395,13 +243,11 @@ class GlobalUiThemeTests(unittest.TestCase):
                     for x in range(4, 64, 7)
                 )
             )
-        self.assertEqual(len(set(signatures)), 3)
+        self.assertEqual(len(set(signatures)), 1)
 
         tray = TrayIcon(self.app, UI_THEME_CLASSIC)
-        classic_key = tray.icon().cacheKey()
         tray.set_ui_theme(UI_THEME_CUTE)
         self.assertEqual(tray._ui_theme, UI_THEME_CUTE)
-        self.assertNotEqual(tray.icon().cacheKey(), classic_key)
         self.assertEqual(
             self.app.windowIcon().cacheKey(),
             tray.icon().cacheKey(),
@@ -440,52 +286,6 @@ class GlobalUiThemeTests(unittest.TestCase):
             )
             self.assertEqual(rendered.size(), QSize(320, 200))
             self.assertEqual(rendered.devicePixelRatio(), 2.0)
-
-    def test_background_crop_canvas_drag_repositions_image(self) -> None:
-        from ui.background_crop_dialog import BackgroundCropCanvas
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / "wide-background.png"
-            source = QImage(600, 300, QImage.Format.Format_ARGB32)
-            source.fill(0xFFFFD6E4)
-            self.assertTrue(source.save(str(path)))
-
-            canvas = BackgroundCropCanvas(
-                path,
-                QSize(160, 100),
-                zoom=150,
-                focus_x=0.5,
-                focus_y=0.5,
-            )
-            canvas.resize(640, 400)
-            center = canvas.rect().center()
-            press = QMouseEvent(
-                QEvent.Type.MouseButtonPress,
-                QPointF(center),
-                QPointF(center),
-                QPointF(center),
-                Qt.MouseButton.LeftButton,
-                Qt.MouseButton.LeftButton,
-                Qt.KeyboardModifier.NoModifier,
-            )
-            move_pos = QPointF(center.x() + 90, center.y() - 45)
-            move = QMouseEvent(
-                QEvent.Type.MouseMove,
-                move_pos,
-                move_pos,
-                move_pos,
-                Qt.MouseButton.NoButton,
-                Qt.MouseButton.LeftButton,
-                Qt.KeyboardModifier.NoModifier,
-            )
-            self.app.sendEvent(canvas, press)
-            self.app.sendEvent(canvas, move)
-
-            zoom, focus_x, focus_y = canvas.transform()
-            self.assertEqual(zoom, 150)
-            self.assertLess(focus_x, 0.5)
-            self.assertGreater(focus_y, 0.5)
-            canvas.close()
 
     def test_cute_theme_overlay_restores_original_widget_styles(self) -> None:
         from ui.global_theme import UiAppearance, apply_ui_appearance
@@ -625,40 +425,6 @@ class ClientWorkspaceOrganisationTests(unittest.TestCase):
         self.assertEqual(clean["version"], WORKSPACE_VERSION)
         self.assertEqual(clean["folders"], [])
         self.assertEqual(clean["clients"][0]["folderId"], "")
-
-    def test_folders_and_drag_layout_are_persisted(self) -> None:
-        from ui.client_workspace_window import ClientWorkspaceWindow
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            store = ClientWorkspaceStore(Path(temp_dir) / "client-workspaces.json")
-            first_folder = store.add_folder("Engineer A")
-            second_folder = store.add_folder("Engineer B")
-            first_client = store.add_client(self._client("Client One", first_folder["id"]))
-            second_client = store.add_client(self._client("Client Two", second_folder["id"]))
-            window = ClientWorkspaceWindow(store=store)
-
-            first_item = window._client_tree.topLevelItem(1)
-            second_item = window._client_tree.topLevelItem(2)
-            moved_client = first_item.takeChild(0)
-            second_item.insertChild(0, moved_client)
-            reordered_client = second_item.takeChild(1)
-            second_item.insertChild(0, reordered_client)
-            window._save_client_tree_layout()
-
-            clients = store.clients()
-            self.assertEqual(
-                [client["id"] for client in clients],
-                [second_client["id"], first_client["id"]],
-            )
-            self.assertEqual(
-                [client["folderId"] for client in clients],
-                [second_folder["id"], second_folder["id"]],
-            )
-
-            store.delete_folder(second_folder["id"])
-            self.assertTrue(all(not client["folderId"] for client in store.clients()))
-            window.close()
-
 
 class _FakeScreen:
     def __init__(self, geometry: QRect):

@@ -12,11 +12,3 @@ class ClientWorkspaceAction(BaseAction):
         opener = context.get("open_client_workspace")
         if callable(opener):
             opener()
-            return
-
-        from ui.client_workspace_window import ClientWorkspaceWindow
-        from ui.window_utils import exec_dialog_on_screen
-
-        parent = context.get("parent_widget")
-        dialog = ClientWorkspaceWindow(parent)
-        exec_dialog_on_screen(dialog, context.get("target_screen"))

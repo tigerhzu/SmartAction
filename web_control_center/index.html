@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>SmartAction 控制中心</title>
+    <link rel="stylesheet" href="/control-center.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="控制中心導覽">
+        <a class="brand" href="https://github.com/tigerhzu/SmartAction" target="_blank" rel="noreferrer" aria-label="在 GitHub 開啟 SmartAction"><img class="brand-logo" src="/smartaction-logo.png" alt="SmartAction" /></a>
+        <nav class="navigation">
+          <button class="nav-item active" data-view="dashboard">儀表板</button>
+          <button class="nav-item" data-view="ring">設定</button>
+          <button class="nav-item" data-view="actions">動作管理</button>
+          <button class="nav-item" data-view="profiles">設定檔</button>
+          <button class="nav-item" data-view="powershell">PowerShell 腳本庫</button>
+          <button class="nav-item" data-view="workspace">客戶工作區</button>
+        </nav>
+        <div class="sidebar-foot"><span class="dot" id="connection-dot"></span><span id="connection-label">正在連線至核心</span></div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar"><div><p class="eyebrow">本機控制介面</p><h1 id="page-title">儀表板</h1></div><div class="top-actions"><span class="status-pill" id="core-status">核心連線中</span><button class="button ghost" id="refresh-button">重新整理</button></div></header>
+        <section class="notice hidden" id="notice" role="status"></section>
+
+        <section class="view active" id="view-dashboard">
+          <div class="metric-grid"><article class="metric"><span>核心版本</span><strong id="metric-version">-</strong></article><article class="metric"><span>輪盤動作數</span><strong id="metric-actions">-</strong></article><article class="metric"><span>啟用快速鍵</span><strong id="metric-hotkey">-</strong></article><article class="metric"><span>輪盤主題</span><strong id="metric-theme">-</strong></article></div>
+          <article class="panel dashboard-modules" aria-label="SmartAction 管理模組">
+            <div class="panel-heading"><div><p class="eyebrow">管理模組</p><h2>選擇要管理的功能</h2></div><p>點擊卡片即可直接前往。</p></div>
+            <div class="dashboard-module-grid">
+              <button class="dashboard-module" type="button" data-go="ring"><span>設定</span><strong>輪盤與系統偏好</strong></button>
+              <button class="dashboard-module" type="button" data-go="actions"><span>動作管理</span><strong>建立、整理輪盤動作</strong></button>
+              <button class="dashboard-module" type="button" data-go="powershell"><span>PowerShell 腳本庫</span><strong>透過 Core 管理與執行腳本</strong></button>
+              <button class="dashboard-module" type="button" data-go="profiles"><span>設定檔</span><strong>匯出與還原 SmartAction 資料</strong></button>
+              <button class="dashboard-module" type="button" data-go="workspace"><span>客戶工作區</span><strong>Firefox、容器與客戶網址</strong></button>
+            </div>
+          </article>
+        </section>
+
+        <section class="view" id="view-ring">
+          <div class="section-heading"><div><p class="eyebrow">NATIVE RING / LIVE CONFIG</p><h2>設定</h2></div><p>每個變更都會由 SmartAction Core 儲存並立即套用至執行中的 Ring，無須重新啟動。</p></div>
+          <section class="panel settings-form" id="ring-settings-form" aria-label="輪盤設定">
+            <label>全域快速鍵<input id="setting-hotkey" autocomplete="off" placeholder="ctrl+space" /></label>
+            <label>輪盤主題<select id="setting-theme"></select></label>
+            <label>星座<select id="setting-constellation"></select></label>
+            <label>星座顏色<input id="setting-color" type="color" /></label>
+            <label>原生介面主題<select id="setting-ui-theme"><option value="classic">經典</option><option value="cute">可愛</option><option value="woven_light">編織淺色</option></select></label>
+            <label>背景不透明度 <output id="opacity-output">82%</output><input id="setting-opacity" type="range" min="15" max="100" /></label>
+            <label>背景裁切縮放 <output id="zoom-output">100%</output><input id="setting-zoom" type="range" min="100" max="400" /></label>
+            <label>背景水平焦點 <output id="focus-x-output">50%</output><input id="setting-focus-x" type="range" min="0" max="100" /></label>
+            <label>背景垂直焦點 <output id="focus-y-output">50%</output><input id="setting-focus-y" type="range" min="0" max="100" /></label>
+            <div class="setting-block"><strong>自訂背景</strong><span id="background-name">內建背景</span><input id="background-file" type="file" accept="image/png,image/jpeg,image/bmp,image/webp" /><div class="inline-actions"><button class="button ghost" id="clear-background" type="button">清除圖片</button></div></div>
+            <div class="setting-block"><strong>執行偏好</strong><label class="check"><input id="setting-autostart" type="checkbox" /> 隨 Windows 啟動</label><label class="check"><input id="setting-reduced-motion" type="checkbox" /> 降低 Ring 動畫</label></div>
+            <div class="auto-apply-status" aria-live="polite"><span id="save-state">變更會自動套用。</span></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-actions">
+          <div class="section-heading"><div><p class="eyebrow">核心設定</p><h2>動作管理</h2></div><p>透過既有的 Action Service 建立、編輯、排序與分層管理動作。</p></div>
+          <div class="action-workspace">
+            <article class="panel"><div class="panel-heading"><div><h2>已設定的動作</h2><p id="action-count">載入中</p></div><button class="button primary" id="new-root-action">新增頂層動作</button></div><div class="action-list" id="action-list"></div></article>
+            <form class="panel editor hidden" id="action-editor"><div class="panel-heading"><div><p class="eyebrow">ACTION EDITOR</p><h2 id="editor-title">新增動作</h2></div><button class="button ghost" id="close-editor" type="button">關閉</button></div><input id="action-id" type="hidden" /><label>名稱<input id="action-label" required maxlength="100" /></label><label>簡短名稱<input id="action-short-label" maxlength="20" /></label><label>圖示<div class="emoji-input"><span class="emoji-preview" id="emoji-preview" aria-hidden="true">✦</span><input id="action-icon" maxlength="20" placeholder="可自行輸入或從圖庫選取" /><button class="button ghost" id="open-emoji-picker" type="button">選擇 Emoji</button></div></label><label>類型<select id="action-type"></select></label><label id="target-field">目標<input id="action-target" /></label><label class="check"><input id="action-enabled" type="checkbox" checked /> 在 Ring 啟用</label><p class="editor-note" id="editor-parent"></p><div class="form-actions"><button class="button primary" type="submit">儲存動作</button><button class="button secondary" id="delete-action" type="button">刪除</button></div></form>
+          </div>
+        </section>
+
+        <section class="view" id="view-profiles">
+          <div class="section-heading"><div><p class="eyebrow">可攜式設定</p><h2>設定檔</h2></div><p>設定檔包含動作、Ring 設定、PowerShell 腳本庫與客戶工作區資料。</p></div>
+          <article class="panel profile-panel"><div><h2>匯出設定檔</h2><p>將目前由 Core 管理的設定下載為 SmartAction JSON。</p><button class="button primary" id="export-profile">匯出設定檔</button></div><div><h2>匯入設定檔</h2><p>SmartAction 建立本機備份後，將取代目前資料。</p><input id="import-profile-file" type="file" accept="application/json,.json" /><button class="button secondary" id="import-profile">匯入設定檔</button></div></article>
+        </section>
+
+        <section class="view" id="view-powershell">
+          <div class="section-heading"><div><p class="eyebrow">核心權限服務</p><h2>PowerShell 腳本庫</h2></div><p>腳本由 SmartAction Core 儲存與執行；此瀏覽器不會自行啟動 PowerShell。</p></div>
+          <div class="action-workspace">
+            <article class="panel"><div class="panel-heading"><div><h2>已儲存的腳本</h2><p id="ps-script-count">載入中</p></div><div class="inline-actions"><select id="ps-category-filter" aria-label="依分類篩選腳本"></select><button class="button primary" id="ps-new-script">新增腳本</button></div></div><div class="action-list" id="ps-script-list"></div></article>
+            <form class="panel editor hidden" id="ps-editor"><div class="panel-heading"><div><p class="eyebrow">SCRIPT EDITOR</p><h2 id="ps-editor-title">新增腳本</h2></div><button class="button ghost" id="ps-close-editor" type="button">關閉</button></div><input id="ps-script-id" type="hidden" /><label>名稱<input id="ps-name" required maxlength="140" /></label><label>說明<textarea id="ps-description" rows="3"></textarea></label><label>分類<select id="ps-category"></select></label><label class="check"><input id="ps-need-admin" type="checkbox" /> 需要系統管理員權限</label><label>風險等級<select id="ps-risk"><option value="safe">安全</option><option value="dangerous">危險 — 需要確認</option></select></label><label>PowerShell 腳本<textarea id="ps-content" required rows="10" spellcheck="false" placeholder="Write-Output 'Hello from SmartAction'"></textarea></label><label>參數 JSON<textarea id="ps-parameters" rows="6" spellcheck="false" placeholder='[{"name":"Target","type":"text","required":true}]'>[]</textarea></label><p class="editor-note">在腳本中使用 <code>{{ParameterName}}</code>。參數類型：<code>text</code> 或 <code>password</code>。</p><div class="form-actions"><button class="button primary" type="submit">儲存腳本</button><button class="button secondary" id="ps-delete-script" type="button">刪除</button></div></form>
+            </div>
+            <article class="panel ps-sop hidden" id="ps-sop"><div class="panel-heading"><div><p class="eyebrow">手動執行 SOP</p><h2 id="ps-sop-title">PowerShell 指令順序</h2></div><button class="button ghost" id="ps-close-sop" type="button">關閉</button></div><p>不使用「執行」時，可依下列 SOP 在 Windows PowerShell 中自行操作。此區只提供說明與複製功能，不會從瀏覽器執行指令。</p><ol class="ps-sop-steps" id="ps-sop-steps"></ol><pre id="ps-sop-command"></pre><div class="inline-actions"><button class="button ghost" id="ps-copy-sop" type="button">複製指令</button></div></article>
+            <article class="panel run-result hidden" id="ps-run-result"><div class="panel-heading"><div><p class="eyebrow">EXECUTION RESULT</p><h2 id="ps-result-title">PowerShell 執行結果</h2></div><button class="button ghost" id="ps-close-result" type="button">關閉</button></div><pre id="ps-result-output"></pre></article>
+        </section>
+
+        <section class="view" id="view-workspace">
+          <div class="section-heading"><div><p class="eyebrow">核心權限服務</p><h2>客戶工作區</h2></div><p>客戶、資料夾、Firefox 設定檔、容器與啟動作業均由 SmartAction Core 管理。</p></div>
+          <div class="workspace-workspace">
+            <article class="panel"><div class="panel-heading"><div><h2>客戶工作區</h2><p id="workspace-count">載入中</p></div><div class="inline-actions"><button class="button ghost" id="export-workspace" type="button">匯出</button><label class="button ghost file-button">匯入<input id="import-workspace-file" type="file" accept="application/json,.json" /></label><button class="button ghost" id="new-workspace-folder" type="button">新增資料夾</button><button class="button primary" id="new-workspace-client" type="button">新增客戶</button></div></div><div class="workspace-list" id="workspace-list"></div></article>
+            <form class="panel editor hidden" id="workspace-editor"><div class="panel-heading"><div><p class="eyebrow">CLIENT EDITOR</p><h2 id="workspace-editor-title">新增客戶</h2></div><button class="button ghost" id="close-workspace-editor" type="button">關閉</button></div><input id="workspace-client-id" type="hidden" /><label>客戶名稱<input id="workspace-client-name" required maxlength="140" /></label><label>所屬資料夾<select id="workspace-client-folder"></select></label><label>Firefox 設定檔<div class="inline-actions"><select id="workspace-client-profile"></select><button class="button mini ghost" id="create-workspace-profile" type="button">建立設定檔</button></div></label><label>Firefox 容器<input id="workspace-client-container" maxlength="140" placeholder="可選容器名稱" /></label><div class="workspace-url-heading"><strong>網址清單</strong><button class="button mini ghost" id="add-workspace-url" type="button">新增網址</button></div><div class="workspace-url-list" id="workspace-url-list"></div><p class="editor-note">啟動仍由 Core 執行。使用容器需要既有的 Firefox Helper 設定。</p><div class="form-actions"><button class="button primary" type="submit">儲存客戶</button><button class="button secondary" id="delete-workspace-client" type="button">刪除</button></div></form>
+          </div>
+          <article class="panel workspace-setup" id="workspace-setup"><div class="panel-heading"><div><p class="eyebrow">FIREFOX / CONTAINER SETUP</p><h2 id="workspace-setup-title">請選擇客戶</h2></div><span class="status-pill" id="workspace-helper-status">尚未檢查</span></div><p id="workspace-setup-summary">選擇客戶後可檢查其 Firefox 設定檔與 Helper 連線。</p><div class="workspace-setup-grid" id="workspace-setup-grid"></div><div class="inline-actions"><button class="button primary" id="launch-workspace" type="button" disabled>在 Firefox 啟動</button><button class="button ghost" id="check-workspace-helper" type="button" disabled>檢查 Helper</button><button class="button ghost" id="install-workspace-helper" type="button" disabled>安裝 Helper</button><button class="button ghost" id="open-workspace-addons" type="button" disabled>開啟附加元件</button><button class="button ghost" id="repair-workspace-setup" type="button">修復設定</button></div></article>
+        </section>
+
+        <section class="view" id="view-future"><article class="panel placeholder"><p class="eyebrow">NEXT WEB MODULE</p><h2 id="future-title">Module</h2><p>This Core service remains available through the Local API. Its dedicated management view is the next migration module.</p></article></section>
+      </main>
+    </div>
+    <dialog id="ps-run-dialog"><form method="dialog" class="dialog-form"><div class="panel-heading"><div><p class="eyebrow">核心執行</p><h2 id="ps-run-title">執行腳本</h2></div><button class="button ghost" value="cancel">取消</button></div><p id="ps-run-warning"></p><div id="ps-parameter-fields" class="parameter-fields"></div><div class="form-actions"><button class="button secondary" value="cancel">取消</button><button class="button primary" id="ps-confirm-run" value="default">交由 Core 執行</button></div></form></dialog>
+    <dialog class="emoji-picker-dialog" id="emoji-picker-dialog"><div class="dialog-form"><div class="emoji-picker-toolbar"><button class="button ghost" id="close-emoji-picker" type="button">關閉</button></div><div class="emoji-category-tabs" id="emoji-category-tabs" aria-label="Emoji 分類"></div><div class="emoji-catalog" id="emoji-catalog"></div></div></dialog>
+    <script src="/control-center.js" defer></script>
+  </body>
+</html>

@@ -89,6 +89,29 @@ ASSETS_DIR = BUNDLE_DIR / "assets"
 #:   Frozen: <_MEIPASS>/docs/
 DOCS_DIR = BUNDLE_DIR / "docs"
 
+def _web_control_center_dir() -> Path:
+    """Locate bundled static files, with a loose-build fallback for packaging tools.
+
+    PyInstaller normally places data below ``sys._MEIPASS``.  Some development
+    and portable layouts instead keep it beside the executable, so prefer the
+    canonical bundle location but accept that explicit fallback when complete.
+    """
+    candidates = (
+        BUNDLE_DIR / "web_control_center",
+        _exe_dir() / "web_control_center",
+        _project_root() / "web_control_center",
+    )
+    for candidate in candidates:
+        if (candidate / "index.html").is_file():
+            return candidate
+    return candidates[0]
+
+
+#: Read-only Web Control Center shell served by the Local API.
+#:   Dev   : <root>/web_control_center/
+#:   Frozen: <_MEIPASS>/web_control_center/ (or a verified loose-build fallback)
+WEB_CONTROL_CENTER_DIR = _web_control_center_dir()
+
 #: Read-only PowerShell scripts (bundled by PyInstaller into sys._MEIPASS).
 #:   Dev   : <root>/core/scripts/
 #:   Frozen: <_MEIPASS>/core/scripts/

@@ -12,12 +12,14 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import Qt, Signal
 
+from core.app_info import APP_VERSION
 from core.actions_config import (
     UI_THEME_CLASSIC,
     UI_THEME_CUTE,
     UI_THEME_IDS,
     UI_THEME_WOVEN,
 )
+from core.paths import WEB_CONTROL_CENTER_DIR
 from ui.style_tokens import ASH, BONE, CHARCOAL, EMBER, EMBER_HOVER, FOG, NEON_CYAN, STEEL, VOID
 
 
@@ -81,6 +83,10 @@ _ABOUT_STYLE = f"""
 
 def _make_icon(ui_theme: str = UI_THEME_CLASSIC) -> QIcon:
     """Draw a crisp tray logo matching the active global interface."""
+    logo_path = WEB_CONTROL_CENTER_DIR / "smartaction-logo.png"
+    logo = QPixmap(str(logo_path)) if logo_path.is_file() else QPixmap()
+    if not logo.isNull():
+        return QIcon(logo)
     theme = (
         str(ui_theme).strip().lower()
         if str(ui_theme).strip().lower() in UI_THEME_IDS
@@ -218,9 +224,7 @@ def _draw_woven_icon(painter: QPainter) -> None:
 
 
 class TrayIcon(QSystemTrayIcon):
-    settings_requested       = Signal()
-    powershell_library_requested = Signal()
-    client_workspace_requested = Signal()
+    control_center_requested = Signal()
     reload_requested         = Signal()
     restart_hotkey_requested = Signal()
 
@@ -233,7 +237,7 @@ class TrayIcon(QSystemTrayIcon):
         self._app = app
         self._ui_theme = UI_THEME_CLASSIC
         self.set_ui_theme(ui_theme)
-        self.setToolTip("Universal Actions Ring")
+        self.setToolTip("SmartAction")
         self._build_menu()
         self.activated.connect(self._on_activated)
 
@@ -252,33 +256,31 @@ class TrayIcon(QSystemTrayIcon):
         menu = QMenu()
         menu.setStyleSheet(_MENU_STYLE)
 
-        menu.addAction("Open Settings",  self.settings_requested.emit)
-        menu.addAction("PowerShell Library", self.powershell_library_requested.emit)
-        menu.addAction("Client Workspace", self.client_workspace_requested.emit)
+        menu.addAction("開啟 Web 控制中心", self.control_center_requested.emit)
         menu.addSeparator()
-        menu.addAction("Reload Config",  self.reload_requested.emit)
-        menu.addAction("Restart Hotkey", self.restart_hotkey_requested.emit)
+        menu.addAction("重新載入設定", self.reload_requested.emit)
+        menu.addAction("重新啟動快速鍵", self.restart_hotkey_requested.emit)
         menu.addSeparator()
-        menu.addAction("About SmartAction", self._show_about)
+        menu.addAction("關於 SmartAction", self._show_about)
         menu.addSeparator()
-        menu.addAction("Exit",           self._app.quit)
+        menu.addAction("結束", self._app.quit)
 
         self.setContextMenu(menu)
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self.settings_requested.emit()
+            self.control_center_requested.emit()
 
     def _show_about(self) -> None:
         box = QMessageBox()
-        box.setWindowTitle("About SmartAction")
+        box.setWindowTitle("關於 SmartAction")
         box.setIconPixmap(self.icon().pixmap(48, 48))
         box.setTextFormat(Qt.TextFormat.RichText)
         box.setText(
-            "<b>SmartAction</b> v0.1.0<br><br>"
-            "A tray-first productivity launcher for Windows.<br>"
-            "Trigger: global hotkey, tray menu, or configured Ring actions.<br><br>"
-            "<span style='color:#9AA0AA'>Built with Python + PySide6.</span>"
+            f"<b>SmartAction</b> v{APP_VERSION}<br><br>"
+            "Windows 的輪盤式工作效率啟動器。<br>"
+            "可透過全域快速鍵、系統匣選單或設定的 Ring 動作啟動。<br><br>"
+            "<span style='color:#9AA0AA'>使用 Python + PySide6 建置。</span>"
         )
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
         box.setStyleSheet(_ABOUT_STYLE)

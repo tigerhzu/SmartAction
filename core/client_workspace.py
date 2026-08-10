@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 import configparser
@@ -42,6 +43,32 @@ DEFAULT_WORKSPACES: dict[str, Any] = {
     "folders": [],
     "clients": [],
 }
+
+
+def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
+    """Write JSON beside its destination, then atomically replace it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_name = temporary.name
+            json.dump(data, temporary, indent=2, ensure_ascii=False)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_name, path)
+    finally:
+        if temporary_name:
+            try:
+                Path(temporary_name).unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 class ClientWorkspaceError(Exception):
@@ -251,6 +278,10 @@ class ClientWorkspaceStore:
         self.path = path
         self._data = self._load_or_create()
 
+    def reload(self) -> None:
+        """Reload this store in place after an external profile replacement."""
+        self._data = self._load_or_create()
+
     def _load_or_create(self) -> dict[str, Any]:
         if not self.path.exists():
             self.save_data(deepcopy(DEFAULT_WORKSPACES))
@@ -265,9 +296,7 @@ class ClientWorkspaceStore:
 
     def save_data(self, data: dict[str, Any]) -> None:
         clean = validate_workspace_data(data)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(clean, f, indent=2, ensure_ascii=False)
+        _write_json_atomic(self.path, clean)
         self._data = clean
 
     def clients(self) -> list[dict[str, Any]]:
@@ -287,11 +316,12 @@ class ClientWorkspaceStore:
             raise ClientWorkspaceError("Client name is required.")
         clean = normalise_client(client)
         self._ensure_unique_name(clean["name"])
-        existing = {c.get("id") for c in self._data.setdefault("clients", [])}
+        candidate = deepcopy(self._data)
+        existing = {c.get("id") for c in candidate.setdefault("clients", [])}
         if clean["id"] in existing:
             clean["id"] = _new_id(clean["name"])
-        self._data["clients"].append(clean)
-        self.save_data(self._data)
+        candidate["clients"].append(clean)
+        self.save_data(candidate)
         return clean
 
     def update_client(self, client_id: str, client: dict[str, Any]) -> dict[str, Any]:
@@ -299,20 +329,22 @@ class ClientWorkspaceStore:
             raise ClientWorkspaceError("Client name is required.")
         clean = normalise_client({**client, "id": client_id})
         self._ensure_unique_name(clean["name"], ignore_id=client_id)
-        clients = self._data.setdefault("clients", [])
+        candidate = deepcopy(self._data)
+        clients = candidate.setdefault("clients", [])
         for idx, existing in enumerate(clients):
             if existing.get("id") == client_id:
                 clients[idx] = clean
-                self.save_data(self._data)
+                self.save_data(candidate)
                 return clean
         clients.append(clean)
-        self.save_data(self._data)
+        self.save_data(candidate)
         return clean
 
     def delete_client(self, client_id: str) -> None:
-        clients = self._data.setdefault("clients", [])
-        self._data["clients"] = [c for c in clients if c.get("id") != client_id]
-        self.save_data(self._data)
+        candidate = deepcopy(self._data)
+        clients = candidate.setdefault("clients", [])
+        candidate["clients"] = [c for c in clients if c.get("id") != client_id]
+        self.save_data(candidate)
 
     def add_folder(self, name: str) -> dict[str, str]:
         clean_name = str(name).strip()
@@ -320,11 +352,12 @@ class ClientWorkspaceStore:
             raise ClientWorkspaceError("Folder name is required.")
         self._ensure_unique_folder_name(clean_name)
         folder = normalise_folder({"name": clean_name})
-        existing_ids = {folder.get("id") for folder in self._data.setdefault("folders", [])}
+        candidate = deepcopy(self._data)
+        existing_ids = {folder.get("id") for folder in candidate.setdefault("folders", [])}
         if folder["id"] in existing_ids:
             folder["id"] = f"folder-{uuid.uuid4().hex[:8]}"
-        self._data["folders"].append(folder)
-        self.save_data(self._data)
+        candidate["folders"].append(folder)
+        self.save_data(candidate)
         return deepcopy(folder)
 
     def rename_folder(self, folder_id: str, name: str) -> dict[str, str]:
@@ -332,44 +365,45 @@ class ClientWorkspaceStore:
         if not clean_name:
             raise ClientWorkspaceError("Folder name is required.")
         self._ensure_unique_folder_name(clean_name, ignore_id=folder_id)
-        for folder in self._data.setdefault("folders", []):
+        candidate = deepcopy(self._data)
+        for folder in candidate.setdefault("folders", []):
             if folder.get("id") == folder_id:
                 folder["name"] = clean_name
-                self.save_data(self._data)
+                self.save_data(candidate)
                 return deepcopy(folder)
         raise ClientWorkspaceError("Folder was not found.")
 
     def delete_folder(self, folder_id: str) -> None:
-        folders = self._data.setdefault("folders", [])
+        candidate = deepcopy(self._data)
+        folders = candidate.setdefault("folders", [])
         if not any(folder.get("id") == folder_id for folder in folders):
             raise ClientWorkspaceError("Folder was not found.")
-        self._data["folders"] = [folder for folder in folders if folder.get("id") != folder_id]
-        for client in self._data.setdefault("clients", []):
+        candidate["folders"] = [folder for folder in folders if folder.get("id") != folder_id]
+        for client in candidate.setdefault("clients", []):
             if client.get("folderId") == folder_id:
                 client["folderId"] = ""
-        self.save_data(self._data)
+        self.save_data(candidate)
 
     def set_client_layout(self, layout: list[tuple[str, str]]) -> None:
-        clients = self._data.setdefault("clients", [])
+        candidate = deepcopy(self._data)
+        clients = candidate.setdefault("clients", [])
         clients_by_id = {str(client.get("id", "")): client for client in clients}
         layout_ids = [str(client_id) for client_id, _folder_id in layout]
         if len(layout_ids) != len(clients) or set(layout_ids) != set(clients_by_id):
             raise ClientWorkspaceError("Client layout must contain every client exactly once.")
         if len(layout_ids) != len(set(layout_ids)):
             raise ClientWorkspaceError("Client layout contains a duplicate client.")
-        folder_ids = {str(folder.get("id", "")) for folder in self._data.get("folders", [])}
+        folder_ids = {str(folder.get("id", "")) for folder in candidate.get("folders", [])}
         reordered: list[dict[str, Any]] = []
         for client_id, folder_id in layout:
             client = clients_by_id[str(client_id)]
             client["folderId"] = str(folder_id) if str(folder_id) in folder_ids else ""
             reordered.append(client)
-        self._data["clients"] = reordered
-        self.save_data(self._data)
+        candidate["clients"] = reordered
+        self.save_data(candidate)
 
     def export_json(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self._data, f, indent=2, ensure_ascii=False)
+        _write_json_atomic(path, self._data)
 
     def import_json(self, path: Path) -> Path:
         with open(path, encoding="utf-8") as f:
@@ -386,8 +420,7 @@ class ClientWorkspaceStore:
         if self.path.exists():
             shutil.copy2(self.path, backup_path)
         else:
-            with open(backup_path, "w", encoding="utf-8") as f:
-                json.dump(DEFAULT_WORKSPACES, f, indent=2, ensure_ascii=False)
+            _write_json_atomic(backup_path, DEFAULT_WORKSPACES)
         return backup_path
 
     def _ensure_unique_name(self, name: str, ignore_id: str | None = None) -> None:
@@ -733,6 +766,9 @@ def _find_firefox_helper_xpi() -> Path | None:
             [
                 base / "firefox-helper.xpi",
                 base / "dist" / "firefox-helper.xpi",
+                # Portable release layout: keep the signed/installable XPI
+                # beside the bundled native host, not inside _internal.
+                base / "firefox" / "firefox-helper.xpi",
             ]
         )
     for path in candidates:
@@ -743,6 +779,7 @@ def _find_firefox_helper_xpi() -> Path | None:
 
 def _find_native_host_source() -> Path | None:
     names = [
+        Path("firefox") / "native_host" / "smartaction_firefox_host.exe",
         Path("native_host") / "smartaction_firefox_host.exe",
         Path("native") / "firefox_helper_host" / "smartaction_firefox_host.exe",
         Path("native") / "firefox_helper_host" / "smartaction_firefox_host.py",

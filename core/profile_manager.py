@@ -2,15 +2,22 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from core.action_contracts import ActionValidationError, normalise_actions
 from core.actions_config import ActionsConfig
-from core.client_workspace import ClientWorkspaceStore, WORKSPACE_PATH, validate_workspace_data
+from core.atomic_json import write_json_atomic
+from core.client_workspace import (
+    WORKSPACE_PATH,
+    WORKSPACE_VERSION,
+    ClientWorkspaceError,
+    ClientWorkspaceStore,
+    validate_workspace_data,
+)
 from core.config_manager import ConfigManager
 from core.constellation import (
     DEFAULT_CONSTELLATION,
@@ -57,11 +64,21 @@ def build_profile(
     ui_background_zoom_override: int | None = None,
     ui_background_focus_x_override: float | None = None,
     ui_background_focus_y_override: float | None = None,
+    *,
+    settings_path: Path | None = None,
+    powershell_library: PowerShellLibrary | None = None,
+    workspace_store: ClientWorkspaceStore | None = None,
 ) -> dict[str, Any]:
-    settings = _read_json(ConfigManager().path, {})
-    library = PowerShellLibrary()
-    workspaces = ClientWorkspaceStore()
-    actions = deepcopy(actions_override if actions_override is not None else actions_config.get_raw_actions())
+    settings = _read_json(settings_path or ConfigManager().path, {})
+    library = powershell_library or PowerShellLibrary()
+    workspaces = workspace_store or ClientWorkspaceStore()
+    actions = normalise_actions(
+        deepcopy(
+            actions_override
+            if actions_override is not None
+            else actions_config.get_raw_actions()
+        )
+    )
     hotkey = hotkey_override if hotkey_override is not None else actions_config.get_hotkey()
     theme = theme_override if theme_override is not None else actions_config.get_theme()
     constellation = (
@@ -127,6 +144,9 @@ def build_profile(
         "actions": _sanitize(actions),
         "powershell_library": _sanitize(library.scripts()),
         "client_workspaces": _sanitize(workspaces.clients()),
+        # Kept separate so the long-standing client_workspaces list remains
+        # backward compatible with existing profile consumers.
+        "client_workspace_folders": _sanitize(workspaces.folders()),
         "ui": _sanitize(
             {
                 "theme": theme,
@@ -160,6 +180,10 @@ def export_profile(
     ui_background_zoom_override: int | None = None,
     ui_background_focus_x_override: float | None = None,
     ui_background_focus_y_override: float | None = None,
+    *,
+    settings_path: Path | None = None,
+    powershell_library: PowerShellLibrary | None = None,
+    workspace_store: ClientWorkspaceStore | None = None,
 ) -> None:
     profile = build_profile(
         actions_config,
@@ -174,42 +198,90 @@ def export_profile(
         ui_background_zoom_override,
         ui_background_focus_x_override,
         ui_background_focus_y_override,
+        settings_path=settings_path,
+        powershell_library=powershell_library,
+        workspace_store=workspace_store,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_json(path, profile)
 
 
-def import_profile(path: Path, actions_config: ActionsConfig, mode: str = "replace") -> ImportResult:
+def import_profile(
+    path: Path,
+    actions_config: ActionsConfig,
+    mode: str = "replace",
+    *,
+    settings_path: Path | None = None,
+    powershell_library: PowerShellLibrary | None = None,
+    workspace_store: ClientWorkspaceStore | None = None,
+) -> ImportResult:
     if mode != "replace":
         raise ProfileError("Merge import is not available yet. Please use Replace mode.")
 
     profile = _load_and_validate_profile(path)
-    backup_path = backup_current_profile(actions_config)
+    backup_path = backup_current_profile(
+        actions_config,
+        settings_path=settings_path,
+        powershell_library=powershell_library,
+        workspace_store=workspace_store,
+    )
     local_path_warning = _contains_local_paths(profile.get("actions", []))
 
     try:
-        _import_replace(profile, actions_config)
+        _import_replace(
+            profile, actions_config,
+            settings_path=settings_path,
+            powershell_library=powershell_library,
+            workspace_store=workspace_store,
+        )
     except Exception:
-        _restore_backup(backup_path, actions_config)
+        _restore_backup(
+            backup_path, actions_config,
+            settings_path=settings_path,
+            powershell_library=powershell_library,
+            workspace_store=workspace_store,
+        )
         raise
 
     return ImportResult(backup_path=backup_path, local_path_warning=local_path_warning)
 
 
-def backup_current_profile(actions_config: ActionsConfig) -> Path:
+def backup_current_profile(
+    actions_config: ActionsConfig,
+    *,
+    settings_path: Path | None = None,
+    powershell_library: PowerShellLibrary | None = None,
+    workspace_store: ClientWorkspaceStore | None = None,
+) -> Path:
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_path = BACKUPS_DIR / f"backup_profile_{stamp}.json"
-    profile = build_profile(actions_config)
+    profile = build_profile(
+        actions_config,
+        settings_path=settings_path,
+        powershell_library=powershell_library,
+        workspace_store=workspace_store,
+    )
     profile["backup_created_at"] = datetime.now().isoformat(timespec="seconds")
     _write_json(backup_path, profile)
     return backup_path
 
 
-def _import_replace(profile: dict[str, Any], actions_config: ActionsConfig) -> None:
+def _import_replace(
+    profile: dict[str, Any],
+    actions_config: ActionsConfig,
+    *,
+    settings_path: Path | None = None,
+    powershell_library: PowerShellLibrary | None = None,
+    workspace_store: ClientWorkspaceStore | None = None,
+) -> None:
     actions = deepcopy(profile.get("actions", []))
     if not isinstance(actions, list):
         raise ProfileError("Profile actions must be a list.")
+    try:
+        actions = normalise_actions(actions)
+    except ActionValidationError as exc:
+        raise ProfileError(f"Profile action schema is invalid: {exc}") from exc
 
     config_meta = profile.get("actions_config", {})
     if not isinstance(config_meta, dict):
@@ -288,24 +360,55 @@ def _import_replace(profile: dict[str, Any], actions_config: ActionsConfig) -> N
     client_workspaces = deepcopy(profile.get("client_workspaces", []))
     if not isinstance(client_workspaces, list):
         raise ProfileError("Profile Client Workspaces must be a list.")
+    client_workspace_folders = deepcopy(profile.get("client_workspace_folders", []))
+    if not isinstance(client_workspace_folders, list):
+        raise ProfileError("Profile Client Workspace folders must be a list.")
 
     clean_scripts = [normalise_script(s) for s in scripts if isinstance(s, dict)]
+    try:
+        clean_workspaces = validate_workspace_data(
+            {
+                "version": WORKSPACE_VERSION,
+                "folders": client_workspace_folders,
+                "clients": client_workspaces,
+            }
+        )
+    except ClientWorkspaceError as exc:
+        raise ProfileError(f"Profile Client Workspaces are invalid: {exc}") from exc
 
     _write_json(actions_config.path, actions_data)
     if settings:
-        _write_json(ConfigManager().path, settings)
-    _write_json(LIBRARY_PATH, {"version": "1.1", "scripts": clean_scripts})
-    _write_json(WORKSPACE_PATH, validate_workspace_data({"version": "1.0", "clients": client_workspaces}))
+        _write_json(settings_path or ConfigManager().path, settings)
+    _write_json(
+        (powershell_library.path if powershell_library is not None else LIBRARY_PATH),
+        {"version": "1.1", "scripts": clean_scripts},
+    )
+    _write_json(
+        workspace_store.path if workspace_store is not None else WORKSPACE_PATH,
+        clean_workspaces,
+    )
 
     actions_config.reload()
 
 
-def _restore_backup(backup_path: Path, actions_config: ActionsConfig) -> None:
+def _restore_backup(
+    backup_path: Path,
+    actions_config: ActionsConfig,
+    *,
+    settings_path: Path | None = None,
+    powershell_library: PowerShellLibrary | None = None,
+    workspace_store: ClientWorkspaceStore | None = None,
+) -> None:
     try:
         profile = _read_json(backup_path, {})
         if not profile:
             return
-        _import_replace(profile, actions_config)
+        _import_replace(
+            profile, actions_config,
+            settings_path=settings_path,
+            powershell_library=powershell_library,
+            workspace_store=workspace_store,
+        )
     except Exception:
         return
 
@@ -361,8 +464,4 @@ def _read_json(path: Path, fallback: Any) -> Any:
 
 
 def _write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    shutil.move(str(tmp), str(path))
+    write_json_atomic(path, data)

@@ -33,3 +33,25 @@ data/smartaction.lock
 *.pfx
 credentials*.json
 secrets*.json
+
+# Test, lint, coverage, editor and local audit output
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*.tmp
+*.bak
+AIQ_REPORT_EVIDENCE.md
+
+# Runtime-generated user data that may contain local paths or customer context
+config/ui-backgrounds/
+config/*.local.json
+data/*.local.json
+resources/*.local.json

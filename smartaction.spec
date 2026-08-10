@@ -76,6 +76,7 @@ _datas = [
 ]
 
 _datas += collect_tree(ROOT / 'assets', 'assets')
+_datas += collect_tree(ROOT / 'web_control_center', 'web_control_center')
 _datas += collect_public_docs()
 _datas += collect_tree(ROOT / 'data' / 'icons', 'data/icons')
 
@@ -88,8 +89,6 @@ _hidden = [
     'ui.forms.join_domain_form',
     'ui.forms.add_local_user_form',
     'ui.forms.form_registry',
-    'ui.powershell_library_window',
-    'ui.client_workspace_window',
     'ui.startup_splash',
 
     # core.actions submodules are imported via side-effects in __init__.py;
@@ -196,7 +195,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,           # binaries go into COLLECT (one-dir mode)
-    name='UniversalActionsRing',
+    name='SmartAction',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -220,6 +219,6 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='UniversalActionsRing',
+    name='SmartAction',
 )
 

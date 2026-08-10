@@ -15,9 +15,12 @@ HOST_NAME = "smartaction_firefox_helper"
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
-APP_SRC = DIST / "UniversalActionsRing"
+APP_SRC = DIST / "SmartAction"
 XPI_SRC = DIST / "firefox-helper.xpi"
-RELEASE_DIR = DIST / f"SmartAction-Release-{VERSION}"
+# The onedir folder is the portable release.  Keeping one canonical folder
+# prevents a raw build and a differently shaped share folder from drifting.
+RELEASE_DIR = APP_SRC
+ARCHIVE_PATH = DIST / f"SmartAction-{VERSION}-portable.zip"
 NATIVE_SRC = ROOT / "native" / "firefox_helper_host" / "smartaction_firefox_host.py"
 
 PUBLIC_DOCS = {
@@ -203,7 +206,7 @@ def _copytree(src: Path, dst: Path) -> None:
 
 
 def _ensure_app_build() -> None:
-    exe = APP_SRC / "UniversalActionsRing.exe"
+    exe = APP_SRC / "SmartAction.exe"
     if not exe.exists():
         raise FileNotFoundError(
             f"App build missing: {exe}. Run build.bat before packaging."
@@ -252,17 +255,9 @@ def _build_native_host_exe() -> Path:
 
 
 def _copy_app_bundle() -> None:
-    if RELEASE_DIR.exists():
-        shutil.rmtree(RELEASE_DIR)
-    shutil.copytree(APP_SRC, RELEASE_DIR)
-
-    source_exe = RELEASE_DIR / "UniversalActionsRing.exe"
-    target_exe = RELEASE_DIR / "SmartAction.exe"
-    if target_exe.exists():
-        target_exe.unlink()
-    source_exe.rename(target_exe)
-
-    for name in ("extensions", "native"):
+    # build.bat has already created the onedir folder.  Only remove optional
+    # release payload that may be left from an earlier packaging pass.
+    for name in ("extensions", "native", "firefox"):
         path = RELEASE_DIR / name
         if path.exists():
             shutil.rmtree(path)
@@ -537,7 +532,7 @@ SmartAction is a Windows tray + hotkey action ring for shortcuts, automation, IT
 
 ## Install
 
-1. Extract the whole `SmartAction-Release-{VERSION}` folder to a writable location, for example `C:\\Tools\\SmartAction`.
+1. Extract the whole `SmartAction` folder (or the supplied portable ZIP) to a writable location, for example `C:\\Tools\\SmartAction`.
 2. Run `install.bat`.
 3. Choose whether to enable Windows startup.
 4. Choose whether to run Firefox helper setup.
@@ -638,6 +633,13 @@ def _validate_release() -> None:
         "uninstall.bat",
         "start.bat",
         "README.md",
+        "_internal/web_control_center/index.html",
+        "_internal/web_control_center/control-center.css",
+        "_internal/web_control_center/control-center.js",
+        "_internal/web_control_center/smartaction-logo.png",
+        "_internal/assets/ui/cute-default-background.png",
+        "_internal/assets/themes/purple/frames/frame_000.png",
+        "_internal/core/scripts/join_domain.ps1",
     ]
     for rel in required:
         path = RELEASE_DIR / rel
@@ -677,10 +679,19 @@ def build_release() -> None:
     _scrub_release_text()
     _validate_release()
 
+    if ARCHIVE_PATH.exists():
+        ARCHIVE_PATH.unlink()
+    shutil.make_archive(
+        str(ARCHIVE_PATH.with_suffix("")),
+        "zip",
+        root_dir=DIST,
+        base_dir=RELEASE_DIR.name,
+    )
+
     print("SmartAction release package created.")
     print(f"Release: {RELEASE_DIR}")
     print(f"App: {RELEASE_DIR / 'SmartAction.exe'}")
-    print(f"Install: {RELEASE_DIR / 'install.bat'}")
+    print(f"Shareable ZIP: {ARCHIVE_PATH}")
 
 
 if __name__ == "__main__":

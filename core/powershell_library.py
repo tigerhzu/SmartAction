@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import tempfile
 import uuid
 from copy import deepcopy
 from datetime import datetime
@@ -355,6 +357,32 @@ DEFAULT_LIBRARY: dict[str, Any] = {
 }
 
 
+def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
+    """Replace a JSON file only after its complete contents reach disk."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_name = temporary.name
+            json.dump(data, temporary, indent=2, ensure_ascii=False)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_name, path)
+    finally:
+        if temporary_name:
+            try:
+                Path(temporary_name).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def _new_id() -> str:
     return f"ps_{uuid.uuid4().hex[:10]}"
 
@@ -395,6 +423,11 @@ class PowerShellLibrary:
         self.recovery_message: str | None = None
         self._data = self._load_or_create()
 
+    def reload(self) -> None:
+        """Reload this existing repository object after an external file replacement."""
+        self.recovery_message = None
+        self._data = self._load_or_create()
+
     def _load_or_create(self) -> dict[str, Any]:
         if not self.path.exists():
             return self._write_defaults()
@@ -422,8 +455,7 @@ class PowerShellLibrary:
         )
         data["scripts"] = clean_scripts
         if self._merge_missing_defaults(data) or changed:
-            with open(self.path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+            _write_json_atomic(self.path, data)
         return data
 
     def _backup_corrupt_file(self) -> None:
@@ -437,8 +469,7 @@ class PowerShellLibrary:
     def _write_defaults(self) -> dict[str, Any]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         data = deepcopy(DEFAULT_LIBRARY)
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        _write_json_atomic(self.path, data)
         return data
 
     def _merge_missing_defaults(self, data: dict[str, Any]) -> bool:
@@ -456,9 +487,7 @@ class PowerShellLibrary:
         return True
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(self._data, f, indent=2, ensure_ascii=False)
+        _write_json_atomic(self.path, self._data)
 
     def scripts(self, category: str | None = None) -> list[dict[str, Any]]:
         scripts = [normalise_script(s) for s in self._data.get("scripts", [])]
@@ -474,23 +503,30 @@ class PowerShellLibrary:
 
     def add(self, script: dict[str, Any]) -> dict[str, Any]:
         clean = normalise_script({**script, "id": script.get("id") or _new_id()})
-        self._data.setdefault("scripts", []).append(clean)
-        self.save()
+        candidate = deepcopy(self._data)
+        candidate.setdefault("scripts", []).append(clean)
+        _write_json_atomic(self.path, candidate)
+        self._data = candidate
         return clean
 
     def update(self, script_id: str, script: dict[str, Any]) -> dict[str, Any]:
-        scripts = self._data.setdefault("scripts", [])
+        candidate = deepcopy(self._data)
+        scripts = candidate.setdefault("scripts", [])
         clean = normalise_script({**script, "id": script_id})
         for idx, existing in enumerate(scripts):
             if existing.get("id") == script_id:
                 scripts[idx] = clean
-                self.save()
+                _write_json_atomic(self.path, candidate)
+                self._data = candidate
                 return clean
         scripts.append(clean)
-        self.save()
+        _write_json_atomic(self.path, candidate)
+        self._data = candidate
         return clean
 
     def delete(self, script_id: str) -> None:
-        scripts = self._data.setdefault("scripts", [])
-        self._data["scripts"] = [s for s in scripts if s.get("id") != script_id]
-        self.save()
+        candidate = deepcopy(self._data)
+        scripts = candidate.setdefault("scripts", [])
+        candidate["scripts"] = [s for s in scripts if s.get("id") != script_id]
+        _write_json_atomic(self.path, candidate)
+        self._data = candidate

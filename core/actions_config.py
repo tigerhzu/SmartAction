@@ -37,7 +37,11 @@ import json
 import shutil
 import uuid
 from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
 
+from core.action_contracts import ActionValidationError, normalise_actions
+from core.action_service import ActionConfigService, ActionMutationResult
+from core.atomic_json import AtomicJsonStore, JsonStoreError
 from core.debug_log import debug_log
 from core.menu_model import MenuItem
 from core.paths import CONFIG_DIR as _CONFIG_DIR
@@ -154,8 +158,10 @@ class ActionsConfig:
     """
 
     def __init__(self, path: Path = _CONFIG_PATH) -> None:
-        self._path = path
+        self._path = Path(path)
+        self._store = AtomicJsonStore(self._path)
         self._data = self._load_or_create()
+        self._action_service = ActionConfigService(self)
         raw_actions = self._data.get("actions", [])
         debug_log(
             f"actions config path: {self._path.resolve()} "
@@ -172,19 +178,38 @@ class ActionsConfig:
 
     def _load_or_create(self) -> dict:
         if self._path.exists():
-            with open(self._path, encoding="utf-8") as f:
-                try:
-                    data = json.load(f)
+            try:
+                data = self._store.read()
+            except JsonStoreError as exc:
+                if not isinstance(exc.__cause__, json.JSONDecodeError):
+                    raise
+                print(f"[ActionsConfig] Corrupt JSON ({exc.__cause__}); regenerating defaults.")
+            else:
+                if not isinstance(data, dict):
+                    print("[ActionsConfig] Invalid root JSON; regenerating defaults.")
+                else:
                     data, changed = self._migrate(data)
+                    try:
+                        clean_actions = normalise_actions(data.get("actions", []))
+                    except ActionValidationError as exc:
+                        # Preserve legacy hand-edited configs at startup. New
+                        # mutations still pass through strict service validation.
+                        debug_log(
+                            "actions config schema warning: "
+                            f"code={exc.code} path={exc.path} message={exc}"
+                        )
+                    else:
+                        if clean_actions != data.get("actions", []):
+                            data["actions"] = clean_actions
+                            changed = True
                     if changed:
                         self._write_data(data)
                     debug_log(f"loaded existing actions config: {self._path.resolve()}")
                     return data
-                except json.JSONDecodeError as exc:
-                    print(f"[ActionsConfig] Corrupt JSON ({exc}); regenerating defaults.")
 
         # First run or corrupt file → write defaults
         data = copy.deepcopy(_DEFAULTS)
+        data["actions"] = normalise_actions(data["actions"])
         self._write_data(data)
         print(f"[ActionsConfig] Created default config: {self._path}")
         debug_log("default actions config was auto-created")
@@ -230,12 +255,71 @@ class ActionsConfig:
         return data, True
 
     def _write_data(self, data: dict) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self._path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        self._store.write(data)
 
     def _save(self) -> None:
         self._write_data(self._data)
+
+    def _update(self, mutate: Callable[[dict[str, Any]], None]) -> None:
+        """Commit a config mutation without exposing half-written state."""
+        next_data = copy.deepcopy(self._data)
+        mutate(next_data)
+        self._write_data(next_data)
+        self._data = next_data
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return a detached snapshot of the complete actions document."""
+        return copy.deepcopy(self._data)
+
+    def update_settings(self, changes: Mapping[str, Any]) -> None:
+        """Atomically update supported non-action settings in one commit."""
+        from core.constellation import normalise_constellation_color
+
+        allowed = {
+            "hotkey",
+            "theme",
+            "constellation",
+            "constellation_color",
+            "ui_theme",
+            "ui_background",
+            "ui_background_opacity",
+            "ui_background_zoom",
+            "ui_background_focus_x",
+            "ui_background_focus_y",
+        }
+        unknown = set(changes) - allowed
+        if unknown:
+            raise ValueError(f"Unsupported settings: {', '.join(sorted(unknown))}")
+
+        clean = dict(changes)
+        if "hotkey" in clean:
+            clean["hotkey"] = str(clean["hotkey"]).strip()
+        if "theme" in clean:
+            clean["theme"] = str(clean["theme"]).strip()
+        if "constellation" in clean:
+            clean["constellation"] = str(clean["constellation"]).strip()
+        if "constellation_color" in clean:
+            clean["constellation_color"] = normalise_constellation_color(
+                clean["constellation_color"]
+            )
+        if "ui_theme" in clean:
+            value = str(clean["ui_theme"]).strip().lower()
+            clean["ui_theme"] = value if value in UI_THEME_IDS else UI_THEME_CLASSIC
+        if "ui_background" in clean:
+            clean["ui_background"] = str(clean["ui_background"] or "").strip()
+        if "ui_background_opacity" in clean:
+            clean["ui_background_opacity"] = max(
+                15, min(100, int(clean["ui_background_opacity"]))
+            )
+        if "ui_background_zoom" in clean:
+            clean["ui_background_zoom"] = max(
+                100, min(400, int(clean["ui_background_zoom"]))
+            )
+        for key in ("ui_background_focus_x", "ui_background_focus_y"):
+            if key in clean:
+                clean[key] = max(0.0, min(1.0, float(clean[key])))
+
+        self._update(lambda data: data.update(clean))
 
     # ── Hotkey ────────────────────────────────────────────────────────────────
 
@@ -243,8 +327,7 @@ class ActionsConfig:
         return self._data.get("hotkey", "ctrl+space")
 
     def set_hotkey(self, combo: str) -> None:
-        self._data["hotkey"] = combo
-        self._save()
+        self._update(lambda data: data.__setitem__("hotkey", combo))
 
     # ── Theme ─────────────────────────────────────────────────────────────────
 
@@ -252,8 +335,7 @@ class ActionsConfig:
         return self._data.get("theme", "tiger")
 
     def set_theme(self, theme_id: str) -> None:
-        self._data["theme"] = theme_id
-        self._save()
+        self._update(lambda data: data.__setitem__("theme", theme_id))
 
     def get_constellation(self) -> str:
         from core.constellation import CONSTELLATIONS, DEFAULT_CONSTELLATION
@@ -262,8 +344,7 @@ class ActionsConfig:
         return value if value in CONSTELLATIONS else DEFAULT_CONSTELLATION
 
     def set_constellation(self, constellation_id: str) -> None:
-        self._data["constellation"] = constellation_id
-        self._save()
+        self._update(lambda data: data.__setitem__("constellation", constellation_id))
 
     def get_constellation_color(self) -> str:
         from core.constellation import normalise_constellation_color
@@ -273,8 +354,8 @@ class ActionsConfig:
     def set_constellation_color(self, color: str) -> None:
         from core.constellation import normalise_constellation_color
 
-        self._data["constellation_color"] = normalise_constellation_color(color)
-        self._save()
+        value = normalise_constellation_color(color)
+        self._update(lambda data: data.__setitem__("constellation_color", value))
 
     def get_ui_theme(self) -> str:
         value = str(self._data.get("ui_theme", UI_THEME_CLASSIC)).strip().lower()
@@ -282,15 +363,15 @@ class ActionsConfig:
 
     def set_ui_theme(self, theme_id: str) -> None:
         value = str(theme_id).strip().lower()
-        self._data["ui_theme"] = value if value in UI_THEME_IDS else UI_THEME_CLASSIC
-        self._save()
+        clean = value if value in UI_THEME_IDS else UI_THEME_CLASSIC
+        self._update(lambda data: data.__setitem__("ui_theme", clean))
 
     def get_ui_background(self) -> str:
         return str(self._data.get("ui_background", "") or "").strip()
 
     def set_ui_background(self, path_value: str) -> None:
-        self._data["ui_background"] = str(path_value or "").strip()
-        self._save()
+        value = str(path_value or "").strip()
+        self._update(lambda data: data.__setitem__("ui_background", value))
 
     def resolve_ui_background(self, path_value: str | None = None) -> Path | None:
         raw = self.get_ui_background() if path_value is None else str(path_value or "").strip()
@@ -314,6 +395,25 @@ class ActionsConfig:
         self.set_ui_background(relative)
         return relative
 
+    def install_ui_background_bytes(self, filename: str, content: bytes) -> str:
+        """Install a browser-uploaded background through the same Core store."""
+        suffix = Path(str(filename or "")).suffix.lower()
+        if suffix not in {".png", ".jpg", ".jpeg", ".bmp", ".webp"}:
+            raise ValueError("UI background must be PNG, JPG, BMP, or WEBP.")
+        if not content:
+            raise ValueError("UI background image is empty.")
+        if len(content) > 10 * 1024 * 1024:
+            raise ValueError("UI background image must be no larger than 10 MB.")
+        if not _looks_like_image(content, suffix):
+            raise ValueError("UI background data does not match its image type.")
+        background_dir = self._path.parent / "ui-backgrounds"
+        background_dir.mkdir(parents=True, exist_ok=True)
+        destination = background_dir / f"background-{uuid.uuid4().hex[:12]}{suffix}"
+        destination.write_bytes(content)
+        relative = destination.relative_to(self._path.parent).as_posix()
+        self.set_ui_background(relative)
+        return relative
+
     def get_ui_background_opacity(self) -> int:
         try:
             value = int(self._data.get("ui_background_opacity", DEFAULT_UI_BACKGROUND_OPACITY))
@@ -322,8 +422,8 @@ class ActionsConfig:
         return max(15, min(100, value))
 
     def set_ui_background_opacity(self, value: int) -> None:
-        self._data["ui_background_opacity"] = max(15, min(100, int(value)))
-        self._save()
+        clean = max(15, min(100, int(value)))
+        self._update(lambda data: data.__setitem__("ui_background_opacity", clean))
 
     def get_ui_background_zoom(self) -> int:
         try:
@@ -350,10 +450,16 @@ class ActionsConfig:
         focus_x: float,
         focus_y: float,
     ) -> None:
-        self._data["ui_background_zoom"] = max(100, min(400, int(zoom)))
-        self._data["ui_background_focus_x"] = max(0.0, min(1.0, float(focus_x)))
-        self._data["ui_background_focus_y"] = max(0.0, min(1.0, float(focus_y)))
-        self._save()
+        clean_zoom = max(100, min(400, int(zoom)))
+        clean_x = max(0.0, min(1.0, float(focus_x)))
+        clean_y = max(0.0, min(1.0, float(focus_y)))
+
+        def mutate(data: dict[str, Any]) -> None:
+            data["ui_background_zoom"] = clean_zoom
+            data["ui_background_focus_x"] = clean_x
+            data["ui_background_focus_y"] = clean_y
+
+        self._update(mutate)
 
     # ── Actions → MenuItem tree ───────────────────────────────────────────────
 
@@ -409,16 +515,73 @@ class ActionsConfig:
     # ── Raw access (for future Settings GUI) ──────────────────────────────────
 
     def get_raw_actions(self) -> list[dict]:
-        """Return the raw action list from JSON (for editing)."""
-        return self._data.get("actions", [])
+        """Return a detached raw action snapshot (for editing)."""
+        return copy.deepcopy(self._data.get("actions", []))
 
     def save_raw_actions(self, actions: list[dict]) -> None:
         """Persist an edited action list back to disk."""
-        self._data["actions"] = actions
-        self._save()
+        self._action_service.replace_all(actions)
+
+    @property
+    def action_service(self) -> ActionConfigService:
+        """Transport-neutral service used by Native UI and future adapters."""
+        return self._action_service
+
+    # ActionRepository implementation. These methods intentionally remain
+    # narrower than the compatibility APIs above.
+    def action_snapshot(self) -> list[dict[str, Any]]:
+        return copy.deepcopy(self._data.get("actions", []))
+
+    def replace_action_snapshot(self, actions: list[dict[str, Any]]) -> None:
+        clean = normalise_actions(actions)
+
+        def mutate(data: dict[str, Any]) -> None:
+            data["actions"] = clean
+
+        self._update(mutate)
+
+    # Convenience facades preserve a simple Core API for non-UI callers.
+    def create_action(
+        self,
+        action: Mapping[str, Any],
+        *,
+        parent_id: str | None = None,
+        index: int | None = None,
+    ) -> ActionMutationResult:
+        return self._action_service.create(action, parent_id=parent_id, index=index)
+
+    def update_action(
+        self,
+        action_id: str,
+        changes: Mapping[str, Any],
+    ) -> ActionMutationResult:
+        return self._action_service.update(action_id, changes)
+
+    def delete_action(self, action_id: str) -> ActionMutationResult:
+        return self._action_service.delete(action_id)
+
+    def reorder_actions(
+        self,
+        ordered_ids: Sequence[str],
+        *,
+        parent_id: str | None = None,
+    ) -> ActionMutationResult:
+        return self._action_service.reorder(ordered_ids, parent_id=parent_id)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _new_id() -> str:
     return f"act_{uuid.uuid4().hex[:8]}"
+
+
+def _looks_like_image(content: bytes, suffix: str) -> bool:
+    if suffix == ".png":
+        return content.startswith(b"\x89PNG\r\n\x1a\n")
+    if suffix in {".jpg", ".jpeg"}:
+        return content.startswith(b"\xff\xd8\xff")
+    if suffix == ".bmp":
+        return content.startswith(b"BM")
+    if suffix == ".webp":
+        return content.startswith(b"RIFF") and content[8:12] == b"WEBP"
+    return False
