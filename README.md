@@ -8,6 +8,10 @@
 [![UI](https://img.shields.io/badge/UI-PySide6-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
 
 <p align="center">
+  <img src="web_control_center/smartaction-logo.png" alt="SmartAction 標誌" width="180">
+</p>
+
+<p align="center">
   <img src="docs/images/smartaction-ring-v1.3.png" alt="SmartAction 動作輪盤" width="620">
 </p>
 
