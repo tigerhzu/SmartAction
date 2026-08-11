@@ -19,7 +19,7 @@ dist/
     start.bat
     uninstall.bat
     README.md
-  SmartAction-v1.4.0-portable.zip
+  SmartAction-v1.4.1-portable.zip
 ```
 
 Share the ZIP, or the complete `dist\SmartAction\` folder. Never share `SmartAction.exe` by itself. Extract it to a writable folder such as `C:\Tools\SmartAction`; do not run it in-place from the ZIP or a protected system directory.

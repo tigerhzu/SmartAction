@@ -178,6 +178,6 @@ python -m app.main
 
 ## Project Status
 
-目前公開發行版本為 `v1.4.0`。此版本導入以 Core service 與 authenticated loopback API 為基礎的 Web Control Center，取代舊式大型原生管理視窗，並已加入 Core／API／Web cutover 回歸測試。
+目前公開發行版本為 `v1.4.1`。此版本修正 Web Control Center 的 PowerShell 執行流程與結果呈現，並避免瀏覽器沿用過期的 Control Center JavaScript。
 
 相關文件：[快速開始](docs/quick-start.md)、[Action 類型](docs/action-types.md)、[Client Workspace](docs/client-workspace.md)、[Profile 匯入／匯出](docs/profile-import-export.md)、[建置與發布](docs/build-and-release.md)。

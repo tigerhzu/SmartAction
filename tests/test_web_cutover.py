@@ -87,6 +87,29 @@ class WebOnlyCutoverTests(unittest.TestCase):
         self.assertIn("openPowerShellSop", script)
         self.assertIn("script.script_content", script)
 
+    def test_powershell_run_dialog_submits_to_core_and_disables_duplicate_runs(self) -> None:
+        root = Path(__file__).parents[1] / "web_control_center"
+        html = (root / "index.html").read_text(encoding="utf-8")
+        script = (root / "control-center.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="ps-run-form"', html)
+        self.assertIn('id="ps-confirm-run" type="submit"', html)
+        self.assertIn('$("#ps-run-form").addEventListener("submit", runPowerShellScript)', script)
+        self.assertIn("if (!script || state.psRunning) return", script)
+        self.assertIn('submit.textContent = "Core 執行中…"', script)
+
+    def test_powershell_execution_result_appears_before_the_script_list(self) -> None:
+        root = Path(__file__).parents[1] / "web_control_center"
+        html = (root / "index.html").read_text(encoding="utf-8")
+        script = (root / "control-center.js").read_text(encoding="utf-8")
+
+        self.assertLess(html.index('id="ps-run-result"'), html.index('id="ps-script-list"'))
+        power_shell_view = html.index('id="view-powershell"')
+        actions_view = html.index('id="view-actions"')
+        self.assertGreater(html.index('id="ps-run-result"'), power_shell_view)
+        self.assertGreater(power_shell_view, actions_view)
+        self.assertIn('result.scrollIntoView({ behavior: "smooth", block: "start" })', script)
+
     def test_ring_settings_localise_constellations_and_preview_web_backgrounds(self) -> None:
         root = Path(__file__).parents[1] / "web_control_center"
         script = (root / "control-center.js").read_text(encoding="utf-8")

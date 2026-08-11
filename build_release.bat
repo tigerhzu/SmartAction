@@ -25,5 +25,5 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo Release folder: %CD%\dist\SmartAction
-echo Shareable ZIP:  %CD%\dist\SmartAction-v1.4.0-portable.zip
+echo Shareable ZIP:  %CD%\dist\SmartAction-v1.4.1-portable.zip
 exit /b 0

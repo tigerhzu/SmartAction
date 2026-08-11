@@ -259,6 +259,9 @@ class LocalApiServer:
                 ),
                 "Referrer-Policy": "no-referrer",
                 "X-Content-Type-Options": "nosniff",
+                # The UI is served by the already-running desktop application.
+                # Avoid retaining a stale JavaScript bundle after it is updated.
+                "Cache-Control": "no-store",
             },
         )
         return True

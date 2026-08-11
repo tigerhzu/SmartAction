@@ -15,6 +15,7 @@ from core.client_workspace_service import ClientWorkspaceService
 from core.config_manager import ConfigManager
 from core.local_api import AUTH_HEADER, LocalApiServer
 from core.powershell_library import PowerShellLibrary
+from core.powershell_runner import PowerShellRunResult
 from core.powershell_service import PowerShellLibraryService
 from core.smartaction_core import SmartActionCore
 
@@ -23,10 +24,20 @@ class LocalApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
         root = Path(self._temp_dir.name)
+        powershell = PowerShellLibraryService(
+            PowerShellLibrary(root / "powershell.json"),
+            runner=lambda _content, _values, _parameters: PowerShellRunResult(
+                success=True,
+                stdout="Core runner completed",
+                stderr="",
+                exit_code=0,
+                duration_seconds=0.01,
+            ),
+        )
         self.core = SmartActionCore(
             actions_config=ActionsConfig(root / "actions.json"),
             legacy_config=ConfigManager(root / "settings.json"),
-            powershell=PowerShellLibraryService(PowerShellLibrary(root / "powershell.json")),
+            powershell=powershell,
             client_workspaces=ClientWorkspaceService(ClientWorkspaceStore(root / "workspaces.json")),
         )
         self.settings_changed = Event()
@@ -99,6 +110,7 @@ class LocalApiTests(unittest.TestCase):
         self.assertIn("SmartAction", html)
         self.assertIn("Content-Security-Policy", headers)
         self.assertEqual(headers["Referrer-Policy"], "no-referrer")
+        self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertEqual(
             self.server.control_center_url,
             f"{self.endpoint.url}/#token={self.server.token}",
@@ -221,6 +233,33 @@ class LocalApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["success"])
         self.assertEqual(payload["value"]["name"], "API Clients")
+
+    def test_powershell_run_route_returns_the_core_execution_result(self) -> None:
+        status, payload = self._request(
+            "POST",
+            "/api/v1/powershell/execute",
+            {
+                "operation": "create",
+                "payload": {
+                    "script": {
+                        "id": "run-script",
+                        "name": "Run Script",
+                        "script_content": "Write-Output test",
+                    }
+                },
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["success"])
+
+        status, payload = self._request(
+            "POST",
+            "/api/v1/powershell/execute",
+            {"operation": "run", "payload": {"script_id": "run-script", "values": {}}},
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["value"]["stdout"], "Core runner completed")
 
     def test_server_refuses_non_loopback_host(self) -> None:
         with self.assertRaises(ValueError):
